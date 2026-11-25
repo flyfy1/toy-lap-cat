@@ -14,7 +14,7 @@ const OG = new URLSearchParams(location.search).get('og') === '1'
 /** a mouse (or trackpad): petting needs the button held, so the hint says so */
 const MOUSE = matchMedia('(pointer: fine)').matches
 /** recipients only: the tag loads on demand, so the first load stays as it was */
-const PurrTag = lazy(() => import('./components/PurrTag'))
+const PurrTag = lazy(() => import('./components/PurrTag').catch(() => ({ default: () => null })))
 const SWATCH: Record<Coat, string> = { tabby: '#8A7360', orange: '#D98B4A', tux: '#2B2522', void: '#121014' }
 
 /** The monologue: one line under the cat, cross-faded. */

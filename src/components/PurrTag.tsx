@@ -1,4 +1,5 @@
 // Lap Cat's landing tag (loaded on demand, recipients only, so the first load stays as it was).
+import type { ReactElement } from 'react'
 import { locale, type Locale } from '../i18n'
 import { Tag } from './Tag'
 
@@ -10,7 +11,7 @@ const TAG: Record<Locale, [string, string]> = {
   ja: ['こちら{name}。飼い主から代理を頼まれました。', 'この猫の飼い主から代理を頼まれました。'],
 }
 
-export default function PurrTag({ name }: { name: string }) {
+export default function PurrTag({ name }: { name: string }): ReactElement | null {
   const [named, plain] = TAG[locale]
   return <Tag text={name ? named.replace('{name}', name) : plain} className="top-[4.2rem]" paper="bg-[#FFFCF5] text-[#3B2E24]" />
 }
