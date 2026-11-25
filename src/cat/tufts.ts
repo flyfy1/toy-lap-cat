@@ -174,7 +174,7 @@ export class Groom {
     for (let q = 0; q < this.cx.length; q++) {
       const k = q * 4
       const along = this.cx[q] * this.fx[q] + this.cy[q] * this.fy[q]
-      const ruf = Math.max(0, Math.min(1, (-along - 0.15) / 0.45))
+      const ruf = Math.max(0, Math.min(1, (-along - 0.08) / 0.4))
       const sl = along > 0 ? this.sleek[q] * Math.min(1, along * 2 + 0.3) : 0
       const pr = this.press[q]
       // base: the local mean fur colour (hides the baked stroke texture so the live tufts dominate)
@@ -183,17 +183,17 @@ export class Groom {
       let b = mean ? mean[q * 3 + 2] : 80
       let a = 0
       if (ruf > 0.01) {
-        const k2 = 1 - 0.45 * ruf
+        const k2 = 1 - 0.55 * ruf
         r *= k2
         g *= k2
         b *= k2
-        a = 0.8 * ruf
+        a = 0.9 * ruf
       } else if (sl > 0.01) {
         // sleek: lighter and a touch warmer, like light on flattened fur
-        r = r + (255 - r) * 0.26 * sl
-        g = g + (244 - g) * 0.24 * sl
-        b = b + (222 - b) * 0.2 * sl
-        a = 0.85 * sl
+        r = r + (255 - r) * 0.42 * sl
+        g = g + (244 - g) * 0.38 * sl
+        b = b + (222 - b) * 0.32 * sl
+        a = 0.9 * sl
       }
       if (pr > 0.01) {
         const k3 = 1 - 0.12 * pr
@@ -382,8 +382,8 @@ export class TuftLayer {
           delta = Math.max(-MAX_ROT, Math.min(MAX_ROT, delta))
           ang += delta * Math.min(1, ml * 1.6)
           const along = cx * fx + cy * fy
-          if (along < -0.3 * 0.5) {
-            const ruf = Math.min(1, (-along - 0.15) / 0.45)
+          if (along < -0.08) {
+            const ruf = Math.min(1, (-along - 0.08) / 0.4)
             ang += t.jit * 1.4 * ruf
             step -= gain.ruffle * ruf
             len *= 1 + 0.3 * ruf

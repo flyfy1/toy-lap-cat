@@ -203,13 +203,13 @@ const thick = (u: number) =>
     [0.2, 1.05],
     [0.52, 1.2],
     [0.8, 0.95],
-    [0.94, 0.62],
-    [1, 0.42],
+    [0.94, 0.7],
+    [1, 0.56],
   ])
 
 export const tailCurve = new Curve([
-  [1.3, 0.05],
-  [1.45, 0.5],
+  [1.18, -0.02],
+  [1.4, 0.48],
   [1.2, 0.95],
   [0.6, 1.05],
   [0.15, 0.95],
@@ -513,8 +513,8 @@ export function buildRig(o: RigOpts): PartDef[] {
       const { t } = cv.nearest(x, y)
       return Math.atan2(t[1], t[0]) + 0.12 * n1(x * 8, y * 8)
     },
-    len: (x, y) => (Math.hypot(x - paw.x, y - paw.y) < 0.16 ? 0.035 : 0.055),
-    jitter: () => 16 * D2R,
+    len: (x, y) => (Math.hypot(x - paw.x, y - paw.y) < 0.17 ? 0.026 : 0.045),
+    jitter: () => 12 * D2R,
     pat(x, y) {
       const { u } = cv.nearest(x, y)
       const nz = n2(x * 8, y * 8)
@@ -571,8 +571,8 @@ export function buildRig(o: RigOpts): PartDef[] {
     toCat: ident,
     R: 0.08,
     flow: (x, y) => (y < f.y - 0.08 ? Math.PI * 0.55 : Math.PI + 0.1) + 0.12 * n1(x * 10, y * 10),
-    len: () => 0.04,
-    jitter: () => 16 * D2R,
+    len: () => 0.03,
+    jitter: () => 12 * D2R,
     pat: (_x, y) => ({ w: smoothstep(f.y - 0.34, f.y - 0.2, y), s: 0, tone: 1 }),
   })
 

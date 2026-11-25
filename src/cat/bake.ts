@@ -71,9 +71,9 @@ export function coat(w: number, s: number, tone: number, pass: number, r: number
 }
 
 const PASSES = [
-  { alpha: 0.5, len: 1.1, w: 0.016, dens: 1400 },
-  { alpha: 0.72, len: 0.9, w: 0.0125, dens: 3000 },
-  { alpha: 0.55, len: 0.6, w: 0.0085, dens: 2300 },
+  { alpha: 0.5, len: 1.1, w: 0.016, dens: 1300 },
+  { alpha: 0.74, len: 0.9, w: 0.0125, dens: 2500 },
+  { alpha: 0.58, len: 0.6, w: 0.0085, dens: 1900 },
 ]
 
 export interface BakeOpts {
@@ -106,10 +106,40 @@ export class Baker {
       c.setTransform(o.ppu, 0, 0, o.ppu, -x0 * o.ppu, -y0 * o.ppu)
       const sp: Sprite = { def, field, cv, c, ppu: o.ppu, x0, y0, bw, bh, strokes: 0 }
       this.sprites.set(def.id, sp)
-      this.underlay(sp)
+      this.quick(sp)
+      this.queueUnderlay(sp)
     }
     if (o.fur) for (const sp of this.sprites.values()) this.queueStrokes(sp)
-    if (!o.fur) this.doneAt = performance.now()
+  }
+
+  /** Frame-1 stand-in: the silhouette in its average coat colour with a soft top-left light. */
+  private quick(sp: Sprite) {
+    const { def, field: f, c } = sp
+    let r = 0
+    let g = 0
+    let b = 0
+    let n = 0
+    for (let j = 1; j < 8; j++)
+      for (let i = 1; i < 8; i++) {
+        const x = f.x0 + ((f.w / f.res) * i) / 8
+        const y = f.y0 + ((f.h / f.res) * j) / 8
+        if (f.sample(x, y) <= 0) continue
+        const pt = def.pat(x, y)
+        const col = coat(pt.w, pt.s * 0.5, pt.tone, 1, 0.45)
+        r += col[0]
+        g += col[1]
+        b += col[2]
+        n++
+      }
+    if (!n) return
+    const [x0, y0, x1, y1] = def.bbox
+    const gr = c.createLinearGradient(x0, y0, x1, y1)
+    gr.addColorStop(0, `rgb(${(r / n) * 1.05},${(g / n) * 1.05},${(b / n) * 1.05})`)
+    gr.addColorStop(1, `rgb(${(r / n) * 0.7},${(g / n) * 0.7},${(b / n) * 0.7})`)
+    c.fillStyle = gr
+    c.beginPath()
+    def.path(c)
+    c.fill()
   }
 
   get done() {
@@ -125,10 +155,11 @@ export class Baker {
     if (!this.jobs.length) this.doneAt = performance.now()
   }
 
-  /** Soft pattern-coloured underlay, inset from the edge so the silhouette itself is made of fur. */
-  private underlay(sp: Sprite) {
+  /** Soft pattern-coloured underlay, inset from the edge so the silhouette itself is made of fur.
+   *  Computed in row bands (one job each) and drawn by the last job. */
+  private queueUnderlay(sp: Sprite) {
     const { field: f, def } = sp
-    const SS = 2
+    const SS = this.o.fur ? 1 : 2
     const W = f.w * SS
     const H = f.h * SS
     const res = f.res * SS
@@ -136,41 +167,53 @@ export class Baker {
     const px = img.data
     const inset = this.o.fur ? 0.022 : 0
     const soft = this.o.fur ? 0.012 : 0.004
-    for (let j = 0; j < H; j++)
-      for (let i = 0; i < W; i++) {
-        const x = f.x0 + (i + 0.5) / res
-        const y = f.y0 + (j + 0.5) / res
-        const d = f.sample(x, y)
-        if (d < inset - soft - (this.o.fur ? 0 : 0.03)) continue
-        const pt = def.pat(x, y)
-        const L = lightAt(def, f, x, y)
-        let col = coat(pt.w, pt.s * 0.85, pt.tone, 1, 0.45)
-        col = scale(col, this.o.fur ? (0.86 + 0.08 * pt.w) * L : L)
-        const k = (j * W + i) * 4
-        px[k] = col[0]
-        px[k + 1] = col[1]
-        px[k + 2] = col[2]
-        px[k + 3] = this.o.fur ? 255 * smoothstep(inset - soft, inset + soft, d) : 255
-      }
-    const tmp = document.createElement('canvas')
-    tmp.width = W
-    tmp.height = H
-    tmp.getContext('2d')!.putImageData(img, 0, 0)
-    const c = sp.c
-    c.save()
-    c.imageSmoothingQuality = 'high'
-    c.drawImage(tmp, f.x0, f.y0, W / res, H / res)
-    if (!this.o.fur) {
-      // crisp vector silhouette for the ?fur=0 proportions view
-      c.globalCompositeOperation = 'destination-in'
-      c.beginPath()
-      def.path(c)
-      c.fill()
-      c.globalCompositeOperation = 'source-over'
+    const BAND = Math.max(2, Math.ceil(1000 / W))
+    for (let r0 = 0; r0 < H; r0 += BAND) {
+      const r1 = Math.min(H, r0 + BAND)
+      this.jobs.push(() => {
+        for (let j = r0; j < r1; j++)
+          for (let i = 0; i < W; i++) {
+            const x = f.x0 + (i + 0.5) / res
+            const y = f.y0 + (j + 0.5) / res
+            const d = f.sample(x, y)
+            if (d < inset - soft - (this.o.fur ? 0 : 0.03)) continue
+            const pt = def.pat(x, y)
+            const L = lightAt(def, f, x, y)
+            let col = coat(pt.w, pt.s * 0.85, pt.tone, 1, 0.45)
+            col = scale(col, this.o.fur ? (0.86 + 0.08 * pt.w) * L : L)
+            const k = (j * W + i) * 4
+            px[k] = col[0]
+            px[k + 1] = col[1]
+            px[k + 2] = col[2]
+            px[k + 3] = this.o.fur ? 255 * smoothstep(inset - soft, inset + soft, d) : 255
+          }
+      })
     }
-    // inner ear: pink cup drawn as part of the underlay (no fur over it, tufts added later)
-    if (def.noFur && (def.id === 'earL' || def.id === 'earR')) this.innerEar(sp)
-    c.restore()
+    this.jobs.push(() => {
+      const tmp = document.createElement('canvas')
+      tmp.width = W
+      tmp.height = H
+      tmp.getContext('2d')!.putImageData(img, 0, 0)
+      const c = sp.c
+      c.save()
+      c.setTransform(1, 0, 0, 1, 0, 0)
+      c.clearRect(0, 0, sp.cv.width, sp.cv.height)
+      c.restore()
+      c.save()
+      c.imageSmoothingQuality = 'high'
+      c.drawImage(tmp, f.x0, f.y0, W / res, H / res)
+      if (!this.o.fur) {
+        // crisp vector silhouette for the ?fur=0 proportions view
+        c.globalCompositeOperation = 'destination-in'
+        c.beginPath()
+        def.path(c)
+        c.fill()
+        c.globalCompositeOperation = 'source-over'
+      }
+      // inner ear: pink cup drawn as part of the underlay (no fur over it, tufts added later)
+      if (def.noFur && (def.id === 'earL' || def.id === 'earR')) this.innerEar(sp)
+      c.restore()
+    })
   }
 
   private innerEar(sp: Sprite) {
@@ -204,7 +247,7 @@ export class Baker {
     const [x0, y0, x1, y1] = def.bbox
     PASSES.forEach((pass, pi) => {
       const total = Math.round(area * pass.dens * (def.density ?? 1))
-      const CH = 900
+      const CH = 120
       for (let start = 0; start < total; start += CH) {
         const n = Math.min(CH, total - start)
         this.jobs.push(() => {

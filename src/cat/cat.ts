@@ -56,6 +56,7 @@ export class Cat {
   half = false
   tuftMs = 0
   tuftCount = 0
+  matchMs = 0
 
   // mood
   bliss = 0
@@ -98,20 +99,27 @@ export class Cat {
   }
 
   /** Recompute layout; rebakes sprites when the scale changes. */
-  layout(w: number, h: number, dpr: number) {
+  timings: Record<string, number> = {}
+  layout(w: number, h: number, dpr: number, keepBake = false) {
     const HW = Math.min(w / 3.55, h / 3.4)
     this.ox = w / 2 + HW * 0.02
     this.oy = h * 0.47
-    const changed = !this.baker || Math.abs(HW * dpr - this.HW * this.dpr) > 1
+    const changed = !this.baker || (!keepBake && Math.abs(HW * dpr - this.HW * this.dpr) > 1) || Math.abs(HW - this.HW) > 1
     this.HW = HW
     this.dpr = dpr
+    const tm = (k: string, f: () => void) => {
+      const a = performance.now()
+      f()
+      this.timings[k] = performance.now() - a
+    }
     if (changed) {
       const ppu = Math.min(HW * dpr, 400)
-      this.baker = new Baker(this.defs, { ppu, seed: this.o.seed, fur: this.o.fur })
-      if (!this.grooms.size) this.buildTufts()
-      this.buildHeadShadow()
+      tm('baker', () => (this.baker = new Baker(this.defs, { ppu, seed: this.o.seed, fur: this.o.fur })))
+      if (!this.grooms.size) tm('tufts', () => this.buildTufts())
+      else for (const l of this.layers.values()) l.matched = false
+      tm('headShadow', () => this.buildHeadShadow())
     }
-    this.buildBlanket(w, h, dpr)
+    tm('blanket', () => this.buildBlanket(w, h, dpr))
   }
 
   private sprite(id: PartId): Sprite {
@@ -544,7 +552,11 @@ export class Cat {
     const tufts = (id: PartId, m: Mat) => {
       const layer = this.layers.get(id)
       if (!layer || !this.o.fur) return
-      if (!layer.matched && this.baker.done) layer.matchSprite(this.sprite(id))
+      if (!layer.matched && this.baker.done) {
+        const a = performance.now()
+        layer.matchSprite(this.sprite(id))
+        this.matchMs += performance.now() - a
+      }
       const g = this.grooms.get(id)!
       const tone = g.paint(this.sprite(id).field)
       if (tone) {

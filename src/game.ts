@@ -4,7 +4,7 @@
 import { audio, type Hiss, type Purr } from './engine/AudioEngine'
 import { haptic, runLoop } from './engine/juice'
 import { Cat, type Touch } from './cat/cat'
-import { HEAD_C, HEAD_ROT, apply, mul, rot, tr } from './cat/rig'
+import { HEAD_C, HEAD_ROT, apply, mul, rot, spine, tr } from './cat/rig'
 
 export interface GameApi {
   dispose(): void
@@ -40,7 +40,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   let h = 0
   let dpr = 1
   let dprCap = 2
-  const resize = () => {
+  const resize = (keepBake = false) => {
     dpr = Math.min(window.devicePixelRatio || 1, dprCap)
     w = window.innerWidth
     h = window.innerHeight
@@ -48,10 +48,11 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     canvas.height = Math.round(h * dpr)
     canvas.style.width = w + 'px'
     canvas.style.height = h + 'px'
-    cat.layout(w, h, dpr)
+    cat.layout(w, h, dpr, keepBake)
   }
   resize()
-  window.addEventListener('resize', resize)
+  const onResize = () => resize()
+  window.addEventListener('resize', onResize)
   const noMenu = (e: Event) => e.preventDefault()
   canvas.addEventListener('contextmenu', noMenu)
   canvas.style.cursor = 'none'
@@ -87,17 +88,28 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       const dur = t1 - t0
       return { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, vx: ((b.x - a.x) * de) / dur, vy: ((b.y - a.y) * de) / dur }
     }
-    return (
-      seg(-2.7, -1.95, catPt(0.98, -0.3), catPt(-0.02, -0.36)) ??
-      seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ??
-      seg(-0.95, -0.05, catPt(-0.12, -0.6), catPt(1.02, -0.5))
-    )
+    // a lane that follows the spine at a fixed depth into the body, from u0 to u1
+    const lane = (t0: number, t1: number, u0: number, u1: number, depth: number): Touch | null => {
+      if (t < t0 || t > t1) return null
+      const k = (t - t0) / (t1 - t0)
+      const e = k * k * (3 - 2 * k)
+      const at = (u: number) => {
+        const { p, t: tg } = spine.at(u)
+        return catPt(p[0] - tg[1] * depth, p[1] + tg[0] * depth)
+      }
+      const a = at(u0 + (u1 - u0) * e)
+      const b = at(u0 + (u1 - u0) * Math.min(1, e + 0.01))
+      const sp = (6 * k * (1 - k)) / (t1 - t0) / 0.01 + 1e-6
+      return { x: a.x, y: a.y, vx: (b.x - a.x) * sp, vy: (b.y - a.y) * sp }
+    }
+    return lane(-2.7, -1.95, 0.8, 0.2, 0.42) ?? seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ?? lane(-0.95, -0.05, 0.14, 0.86, 0.13)
   }
 
   // ---------- input ----------
   const ptrs = new Map<number, Ptr>()
   let started = false
   let firstEvt = 0
+  let handlerAt = 0
   let reactionPending = false
   let purr: Purr | null = null
   let hiss: Hiss | null = null
@@ -105,7 +117,12 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   let vibing = false
 
   const startAudio = () => {
+    const a = performance.now()
     audio.unlock()
+    if (dbg.unlockMs === undefined) dbg.unlockMs = performance.now() - a
+  }
+  /** Voices are built on the frame after the unlock, so the first touch is never delayed by them. */
+  const ensureVoices = () => {
     if (!purr && audio.ctx) {
       purr = purrMode === 'rec' ? audio.purrRec() : audio.purrSynth()
       hiss = audio.hiss()
@@ -124,6 +141,9 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (!dbg.firstReactionMs && !reactionPending) {
       reactionPending = true
       firstEvt = e.timeStamp
+      dbg.firstEvtQueueMs = performance.now() - e.timeStamp
+      handlerAt = performance.now()
+      dbg.firstEvtType = e.type
     }
   }
   const onDown = (e: PointerEvent) => {
@@ -182,7 +202,8 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   let workMs = 0
   const frames: number[] = []
   let lastNow = performance.now()
-  let slowFor = 0
+  let calmSince = 0
+  const calm: number[] = []
 
   const step = (dt: number, nowMs: number) => {
     const touches: Touch[] = []
@@ -213,7 +234,9 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     simT += dt
     // audio + haptics
     if (purr) {
-      purr.set(cat.bliss)
+      // bliss drives the level; touching a bliss zone gives an immediate audible floor
+      const zoneOn = cat.finger.on && (cat.zone === 'chin' || cat.zone === 'cheek' || cat.zone === 'top')
+      purr.set(zoneOn ? Math.max(0.6, cat.bliss) : cat.bliss)
       hiss?.set((maxSpeed / cat.HW) * (125 / 900))
       const lvl = purr.level()
       const now = performance.now()
@@ -240,7 +263,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (frames.length > 600) frames.shift()
     fps = fps * 0.9 + (1000 / Math.max(1, delta)) * 0.1
     const a = performance.now()
-    cat.baker.step(12)
+    cat.baker.step(started ? 6 : 14)
     if (freezeAt !== null) {
       if (!frozen) {
         // fast-forward deterministically in fixed steps, then hold
@@ -250,19 +273,34 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       }
     } else step(dtRaw, now)
     cat.draw(ctx, true)
+    if (!reactionPending) ensureVoices()
     workMs = workMs * 0.9 + (performance.now() - a) * 0.1
     if (reactionPending) {
       reactionPending = false
       dbg.firstReactionMs = performance.now() - firstEvt
+      dbg.handlerToFrameMs = performance.now() - handlerAt
     }
-    // auto-degrade
-    if (freezeAt === null && cat.baker.done) {
-      slowFor = delta > 20 ? slowFor + delta / 1000 : Math.max(0, slowFor - delta / 2000)
-      if (slowFor > 1 && !cat.half) {
-        cat.half = true
-        dprCap = 1.5
-        resize()
-        dbg.degraded = true
+    // auto-degrade: average frame time over the last second above 20 ms (ignoring bake and start-up)
+    if (freezeAt === null && !cat.half) {
+      if (!cat.baker.done || document.hidden) {
+        calmSince = now
+        calm.length = 0
+      } else if (now - calmSince > 500) calm.push(delta)
+      if (calm.length > 240) calm.shift()
+      {
+        let sum = 0
+        let n = 0
+        for (let i = calm.length - 1; i >= 0 && sum < 1000; i--) {
+          sum += calm[i]
+          n++
+        }
+        if (sum >= 1000 && sum / n > 20) {
+          dbg.fpsBeforeDegrade = 1000 / (sum / n)
+          cat.half = true
+          dprCap = Math.min(dprCap, 1.5)
+          resize(true)
+          dbg.degraded = Math.round(now)
+        }
       }
     }
     if (showStats) {
@@ -276,7 +314,19 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       ctx.fillText(`bake ${cat.baker.bakeMs.toFixed(0)} ms  ${cat.baker.totalStrokes} strokes`, 12, 50)
       ctx.fillText(`bliss ${cat.bliss.toFixed(2)}  zone ${cat.zone}  dpr ${dpr}`, 12, 64)
     }
-    if (!dbg.firstPaintMs) dbg.firstPaintMs = performance.now()
+    if (!dbg.firstPaintMs) {
+      dbg.firstPaintMs = performance.now()
+    }
+    if (cat.baker.done && dbg.prepareAt === undefined) {
+      // create the (suspended) audio context once the bake is done, so the first touch only resumes it
+      dbg.prepareAt = 0
+      setTimeout(() => {
+        const a = performance.now()
+        audio.prepare()
+        dbg.prepareAt = [Math.round(a), Math.round(performance.now() - a)]
+      }, 30)
+    }
+    dbg.timings = cat.timings
     if (cat.baker.done && !dbg.ready) {
       dbg.ready = true
       dbg.bakeMs = cat.baker.bakeMs
@@ -284,6 +334,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       dbg.strokes = cat.baker.totalStrokes
     }
     dbg.fps = fps
+    dbg.matchMs = cat.matchMs
     dbg.workMs = workMs
     dbg.tuftMs = cat.tuftMs
     dbg.bliss = cat.bliss
@@ -298,7 +349,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       stop()
       purr?.stop()
       hiss?.stop()
-      window.removeEventListener('resize', resize)
+      window.removeEventListener('resize', onResize)
       canvas.removeEventListener('contextmenu', noMenu)
       canvas.removeEventListener('pointerdown', onDown)
       canvas.removeEventListener('pointermove', onMove)

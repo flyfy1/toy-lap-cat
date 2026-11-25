@@ -58,7 +58,7 @@ export interface Hiss {
   stop(): void
 }
 
-const PURR_PEAK = 0.125 // about -18 dBFS
+const PURR_PEAK = 0.175 // measured peak about -18 dBFS (OfflineAudioContext render)
 const BREATH = { inhale: 0.9, gap: 0.08, exhale: 1.14 }
 const BREATH_T = BREATH.inhale + BREATH.exhale + BREATH.gap * 2 // 2.2 s
 /** Recorded purr: 3 whole breath cycles trimmed from BigSoundBank #0436 (CC0, Joseph Sardin). */
@@ -70,9 +70,25 @@ class AudioEngine {
   private noiseBuf: AudioBuffer | null = null
   private recent: number[] = []
 
+  /** Create the (suspended) context ahead of time, so the first touch only has to resume it. */
+  prepare(): void {
+    if (this.ctx) return
+    try {
+      this.build()
+    } catch {
+      /* no audio */
+    }
+  }
+
   /** Call from the first pointerdown. Creates/resumes the context. */
   unlock(): void {
-    if (!this.ctx) {
+    if (!this.ctx) this.build()
+    if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume()
+  }
+
+  private build(): void {
+    if (this.ctx) return
+    {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       if (!AC) return
       const ctx = new AC()
@@ -93,7 +109,6 @@ class AudioEngine {
       this.master = master
       this.noiseBuf = buf
     }
-    if (this.ctx.state !== 'running') void this.ctx.resume()
   }
 
   private get ok(): boolean {
@@ -392,7 +407,7 @@ class AudioEngine {
         if (Math.abs(target - cur) < 1e-4) return
         const now = ctx.currentTime
         out.gain.cancelScheduledValues(now)
-        out.gain.setTargetAtTime(target, now, target > cur ? 0.4 : 0.85)
+        out.gain.setTargetAtTime(target, now, target > cur ? 0.3 : 0.85)
         cur = target
       },
       phase: () => (((ctx.currentTime - cycle0) % BREATH_T) + BREATH_T) % BREATH_T / BREATH_T,
