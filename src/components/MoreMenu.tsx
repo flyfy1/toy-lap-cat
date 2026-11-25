@@ -7,7 +7,16 @@ const SITES: { id: ToyId; icon: string }[] = [
   { id: 'void', icon: '🕳️' },
   { id: 'smash', icon: '🔨' },
   { id: 'pop', icon: '🫧' },
+  { id: 'knock', icon: '🪵' },
+  { id: 'purr', icon: '🐈' },
 ]
+
+/** Light toys (pale backgrounds) get dark-ink pills. */
+export const LIGHT_TOYS: ToyId[] = ['purr']
+export const pillClass = (toy: ToyId) =>
+  LIGHT_TOYS.includes(toy)
+    ? 'rounded-full border border-[#4A3A2C]/20 bg-[#FFF8EE]/55 px-3.5 py-1.5 text-sm font-medium text-[#4A3A2C]/85 backdrop-blur-md hover:bg-[#FFF8EE]/80 active:scale-95'
+    : 'rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white/80 backdrop-blur-md hover:bg-white/20 active:scale-95'
 
 export function MoreMenu({ current }: { current: ToyId }) {
   const [open, setOpen] = useState(false)
@@ -43,10 +52,7 @@ export function MoreMenu({ current }: { current: ToyId }) {
       )}
       <div className="flex gap-2">
       <ShareButton toy={current} />
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white/80 backdrop-blur-md hover:bg-white/20 active:scale-95"
-      >
+      <button onClick={() => setOpen((o) => !o)} className={pillClass(current)}>
         {open ? '✕' : 'More ⚡'}
       </button>
       </div>

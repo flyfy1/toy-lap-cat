@@ -183,11 +183,15 @@ export class Groom {
       let g = mean ? mean[q * 3 + 1] : 100
       let b = mean ? mean[q * 3 + 2] : 80
       let a = 0
+      const lu = r * 0.3 + g * 0.59 + b * 0.11
+      const light = Math.max(0, Math.min(1, (lu - 115) / 60))
       if (ruf > 0.01) {
-        const k2 = 1 - 0.55 * ruf
+        // ruffled: the darker undercoat shows. White fur only goes a little warmer and dimmer,
+        // otherwise a well-scratched chin looks dirty
+        const k2 = 1 - (0.55 - 0.4 * light) * ruf
         r *= k2
-        g *= k2
-        b *= k2
+        g *= k2 * (1 - 0.03 * light * ruf)
+        b *= k2 * (1 - 0.08 * light * ruf)
         a = 0.9 * ruf
       } else if (sl > 0.01) {
         // sleek: lighter and a touch warmer, like light on flattened fur
@@ -206,7 +210,8 @@ export class Groom {
       px[k] = r
       px[k + 1] = g
       px[k + 2] = b
-      px[k + 3] = 255 * ins[q] * Math.min(0.9, a)
+      // on white fur the flat tone would read as a grey smear: keep it faint there
+      px[k + 3] = 255 * ins[q] * Math.min(0.9, a) * (1 - 0.65 * light)
     }
     this.cv.getContext('2d')!.putImageData(this.img!, 0, 0)
     return this.cv
@@ -362,6 +367,8 @@ export class TuftLayer {
       tip.push(new Path2D())
     }
     const used = new Uint8Array(15)
+    // white fur: ruffling only dims it a little (its dark ramp end is shadow, which reads as dirt)
+    const rufK = this.ramps.map((r) => (lumOf(r[2]) > 170 ? 0.35 : 1))
     const T = this.tufts
     const [a, b, c, d, e, f] = m
     for (let i = half ? 1 : 0; i < T.length; i += half ? 2 : 1) {
@@ -386,7 +393,7 @@ export class TuftLayer {
           if (along < -0.08) {
             const ruf = Math.min(1, (-along - 0.08) / 0.4)
             ang += t.jit * 1.4 * ruf
-            step -= gain.ruffle * ruf
+            step -= gain.ruffle * ruf * rufK[t.fam]
             len *= 1 + 0.3 * ruf
           } else if (along > 0) {
             step += gain.sleek * g.sleek[q] * Math.min(1, along * 2)

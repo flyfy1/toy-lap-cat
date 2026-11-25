@@ -1,14 +1,50 @@
-// Lap Cat, Phase 1 spike: the cat at rest, head-zone petting, fur that combs, purr + haptic purr.
-// Debug params (kept in production): ?pose=rest|bliss|chin ?t=<s> ?seed=<n> ?fur=0 ?stats=1 ?purr=synth|rec ?stroke=1
+// Lap Cat: the cat on its blanket, petting input, purr + haptic purr, one-shot sounds, the monologue and the session counters.
+// Debug params (kept in production, harmless): ?pose=rest|bliss|chin|sleep|stretch|belly|trap|irk|swat|knead|groom|yawn|glass
+// ?t=<s> (freeze the clock) ?seed=<n> ?fur=0 ?stats=1 ?purr=synth|rec ?stroke=1
 
 import { audio, type Hiss, type Purr } from './engine/AudioEngine'
 import { haptic, runLoop } from './engine/juice'
-import { Cat, type Touch } from './cat/cat'
+import { Cat, type CatEvent, type Touch } from './cat/cat'
+import { COAT } from './cat/palette'
 import { HEAD_C, HEAD_ROT, apply, mul, rot, spine, tr } from './cat/rig'
+import type { Key } from './i18n'
+
+/** Counters for the cat-tax receipt (this session). */
+export interface CatStats {
+  pets: number
+  petSec: number
+  purrSec: number
+  blissSec: number
+  biscuits: number
+  traps: number
+  granted: number
+  swats: number
+  irks: number
+}
+
+export interface GameHooks {
+  onFirst(): void
+  /** a monologue line (already rate-limited) */
+  onLine(key: Key): void
+  /** a glass went off the table: show the smash chip */
+  onGlass(): void
+  onAsleep(asleep: boolean): void
+  /** analytics-worthy moments (numbers only) */
+  onTrack(event: string, params?: Record<string, number>): void
+}
 
 export interface GameApi {
   dispose(): void
+  stats: CatStats
+  /** staff rating 1..5 in half steps */
+  rating(): number
+  /** a copy of the blanket and cat, cropped to the rug */
+  snapshot(): HTMLCanvasElement
+  /** css px y of the line under the cat (for the monologue) */
+  lineY(): number
 }
+
+const LINE_GAP = 2500
 
 interface Ptr {
   x: number
@@ -24,9 +60,10 @@ type W = Window & { __cat?: Record<string, unknown> }
 
 const STROKE_T = 2.7
 
-export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameApi {
+export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: CatStats): GameApi {
   const q = new URLSearchParams(location.search)
-  const pose = q.get('pose') ?? 'rest'
+  const og = q.get('og') === '1'
+  const pose = q.get('pose') ?? (og ? 'bliss' : 'rest')
 
   const seed = Math.max(1, parseInt(q.get('seed') || '1', 10) || 1)
   const fur = q.get('fur') !== '0'
@@ -34,7 +71,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   const purrMode = q.get('purr') === 'rec' ? 'rec' : 'synth'
   const stroke = q.get('stroke') === '1'
   // ?t may be negative with ?stroke=1 (the canned stroke runs from -STROKE_T to 0)
-  const freezeAt = q.has('t') ? Math.max(stroke ? -STROKE_T : 0, parseFloat(q.get('t') || '0') || 0) : null
+  const freezeAt = og && !q.has('t') ? 1 : q.has('t') ? Math.max(stroke ? -STROKE_T : 0, parseFloat(q.get('t') || '0') || 0) : null
 
   const tStart = performance.now()
   const ctx = canvas.getContext('2d', { alpha: false })!
@@ -76,11 +113,60 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   const catPt = (cx: number, cy: number) => ({ x: cat.ox + cx * cat.HW, y: cat.oy + cy * cat.HW })
   if (pose === 'bliss') cat.bliss = 1
   if (pose === 'chin') cat.bliss = 0.9
+  // Phase 2 poses: inject the state directly (screenshots and tests)
+  if (pose === 'sleep') {
+    cat.fallAsleep()
+    cat.sleepPose.x = 1
+  }
+  if (pose === 'stretch') cat.wakeT = 0.4
+  if (pose === 'belly' || pose === 'trap') {
+    cat.bliss = 1
+    cat.belly = pose === 'trap' ? 'trap' : 'invite'
+    cat.roll.x = 1
+    cat.footRot.x = -25 * (Math.PI / 180)
+    if (pose === 'trap') {
+      cat.kickT = 0.25
+      cat.kicksLeft = 9
+      cat.lastKickAt = 0
+    }
+  }
+  if (pose === 'irk') cat.irk = 0.78
+  if (pose === 'swat') cat.irk = 1
+  if (pose === 'knead') {
+    cat.bliss = 1
+    cat.kneadHighT = 5.1
+  }
+  if (pose === 'groom') {
+    cat.groomT = 0
+    cat.groomDur = 99
+  }
+  if (pose === 'yawn') cat.yawnT = 0
+  if (pose === 'glass') cat.idleT = 19.5
+  const POSED = ['sleep', 'stretch', 'belly', 'trap', 'irk', 'swat', 'knead', 'groom', 'yawn', 'glass'].includes(pose)
+  if (POSED) {
+    // no surprise slow blinks or grooming in a posed screenshot
+    cat.restSlowAt = 1e9
+    cat.groomAt = pose === 'groom' ? 0 : 1e9
+  }
   /** Virtual finger at sim time t (s), or null. */
   const scripted = (t: number): Touch | null => {
     if (pose === 'bliss' || pose === 'chin') {
       const base = pose === 'bliss' ? headPt(-0.4, 0.14) : headPt(0.02, 0.4)
       // a slow little scritch
+      const r = 0.02 * cat.HW
+      const a = t * 5
+      return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r * 0.6, vx: -Math.sin(a) * r * 5, vy: Math.cos(a) * r * 3 }
+    }
+    if (pose === 'trap' || pose === 'belly') return pose === 'trap' ? { ...catPt(0.1, 0.36), vx: 0, vy: 0 } : null
+    if (pose === 'swat') return { ...headPt(-0.3, 0.3), vx: 0, vy: 0 }
+    if (pose === 'irk') {
+      // fur stroked the wrong way, over and over
+      const k = (t * 0.8) % 1
+      const a = catPt(0.95 - 0.9 * k, -0.18 + 0.2 * k)
+      return { ...a, vx: -0.9 * 0.8 * cat.HW, vy: 0.2 * 0.8 * cat.HW }
+    }
+    if (pose === 'knead') {
+      const base = headPt(0.02, 0.4)
       const r = 0.02 * cat.HW
       const a = t * 5
       return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r * 0.6, vx: -Math.sin(a) * r * 5, vy: Math.cos(a) * r * 3 }
@@ -145,7 +231,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (!cat.hit(e.clientX, e.clientY)) return
     if (!started) {
       started = true
-      onFirst()
+      hooks.onFirst()
     }
     if (!dbg.firstReactionMs && !reactionPending) {
       reactionPending = true
@@ -194,9 +280,12 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   canvas.addEventListener('pointerup', onUp)
   canvas.addEventListener('pointercancel', onUp)
   canvas.addEventListener('pointerleave', onLeave)
+  let hiddenAt = 0
   const onVis = () => {
     calm.length = 0
     calmSince = performance.now()
+    if (!document.hidden && hiddenAt && performance.now() - hiddenAt >= 30000) cat.fallAsleep()
+    hiddenAt = document.hidden ? performance.now() : 0
     if (document.hidden) {
       stopVibe()
       haptic(0)
@@ -205,6 +294,168 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     }
   }
   document.addEventListener('visibilitychange', onVis)
+
+  // ---------- events: sounds, haptics, counters, monologue ----------
+  const stats: CatStats = keep ?? { pets: 0, petSec: 0, purrSec: 0, blissSec: 0, biscuits: 0, traps: 0, granted: 0, swats: 0, irks: 0 }
+  const vibe = (p: number | number[]) => {
+    if (!audio.muted && freezeAt === null) haptic(p)
+  }
+  let lineAt = -1e9
+  let lineKey: Key | null = null
+  let pending: { key: Key; prio: number } | null = null
+  const said = new Set<Key>()
+  /** prio 2: event lines (shown as soon as the gap allows, replacing a waiting mood line); 1: mood lines */
+  const say = (key: Key, prio = 1) => {
+    if (key === lineKey) return
+    if (!pending || prio >= pending.prio) pending = { key, prio }
+  }
+  const flushLine = (nowMs: number) => {
+    if (!pending || nowMs - lineAt < LINE_GAP) return
+    lineKey = pending.key
+    pending = null
+    lineAt = nowMs
+    said.add(lineKey)
+    hooks.onLine(lineKey)
+  }
+  let blissRun = 0
+  let blissMaxSent = 0
+  cat.onEvent = (e: CatEvent, n: number) => {
+    switch (e) {
+      case 'pet':
+        stats.pets++
+        break
+      case 'boop':
+        vibe(8)
+        audio.tone({ freq: 1400, freqEnd: 1900, dur: 0.05, gain: 0.03 })
+        say('cat_boop', 2)
+        break
+      case 'sneeze':
+        audio.sneeze()
+        break
+      case 'beans':
+      case 'beans_hold':
+        say('cat_beans', 2)
+        break
+      case 'tail':
+        say('cat_tail', 2)
+        break
+      case 'tailbase':
+        say('cat_continue')
+        break
+      case 'grain':
+        say('cat_grain', 2)
+        break
+      case 'rough':
+        say('cat_rough', 2)
+        break
+      case 'belly_no':
+        say('cat_belly_no', 2)
+        break
+      case 'belly_invite':
+        hooks.onTrack('belly_invite')
+        break
+      case 'trap':
+        stats.traps++
+        vibe([30, 40, 30, 40, 30, 40, 30])
+        purr?.set(0)
+        say('cat_trap', 3)
+        hooks.onTrack('belly_trap', { n: stats.traps })
+        break
+      case 'kick':
+        audio.thump(0.12)
+        break
+      case 'release':
+        say('cat_noted', 2)
+        break
+      case 'granted':
+        stats.granted++
+        say('cat_granted', 3)
+        hooks.onTrack('belly_granted', { n: stats.granted })
+        break
+      case 'warn04':
+        stats.irks++
+        say('cat_warn', 2)
+        break
+      case 'warn07':
+        stopVibe()
+        break
+      case 'purr_cut':
+        purr?.cut()
+        break
+      case 'swat':
+        stats.swats++
+        audio.swat()
+        vibe(12)
+        say('cat_warned', 3)
+        hooks.onTrack('swat', { n: stats.swats })
+        break
+      case 'thump':
+        audio.thump()
+        break
+      case 'knead_start':
+        say('cat_knead', 2)
+        hooks.onTrack('knead_start')
+        break
+      case 'biscuit':
+        stats.biscuits++
+        if (cat.finger.on) vibe(6)
+        audio.thump(0.04)
+        break
+      case 'knead_end':
+        hooks.onTrack('biscuits', { n })
+        break
+      case 'slow_blink':
+        if (!said.has('cat_blink')) say('cat_blink', 2)
+        hooks.onTrack('slow_blink')
+        break
+      case 'sleep':
+        say('cat_zzz', 3)
+        hooks.onAsleep(true)
+        hooks.onTrack('sleep')
+        break
+      case 'wake':
+        say('cat_awake', 3)
+        hooks.onAsleep(false)
+        hooks.onTrack('wake', { slept_s: n })
+        break
+      case 'trill':
+        audio.trill()
+        break
+      case 'glass_push':
+        audio.clink()
+        break
+      case 'glass_fall':
+        audio.glassFall()
+        say('cat_gravity', 3)
+        hooks.onGlass()
+        hooks.onTrack('glass_knocked', { n: ++glassN })
+        break
+      case 'zone':
+        break
+      case 'groom':
+        break
+    }
+  }
+  let glassN = 0
+  /** mood lines while petting (the meter): what the cat thinks of the current spot */
+  const moodLine = () => {
+    if (!cat.finger.on || cat.asleep || cat.belly !== 'none' || cat.irkStage > 0) return
+    const z = cat.zone
+    if (!said.has('cat_coat_orange') && COAT.id === 'orange') return say('cat_coat_orange')
+    if (!said.has('cat_coat_tux') && COAT.id === 'tux') return say('cat_coat_tux')
+    if (!said.has('cat_coat_void') && COAT.id === 'void') return say('cat_coat_void')
+    if (cat.bliss > 0.75 && purr && purr.level() > 0.3 && !said.has('cat_fridge')) return say('cat_fridge')
+    if (z === 'chin' && cat.bliss > 0.4) return say('cat_there')
+    if (z === 'earbase') return say('cat_ears')
+    if (z === 'backWith') return say('cat_stretch')
+    if (z === 'cheek') return say(cat.bliss > 0.5 ? 'cat_continue' : 'cat_left')
+    if (z === 'top' || z === 'back' || z === 'chest') return say(cat.bliss > 0.6 ? 'cat_continue' : 'cat_ok')
+  }
+  const rating = () => {
+    // bliss time earns, irritation costs; one swat is a whole star
+    const r = 2 + Math.min(3, stats.blissSec / 25 + stats.granted * 0.5) - stats.swats * 1 - stats.irks * 0.25 + Math.min(0.5, stats.petSec / 120)
+    return Math.max(1, Math.min(5, Math.round(r * 2) / 2))
+  }
 
   // ---------- loop ----------
   let simT = stroke ? -STROKE_T : 0
@@ -246,11 +497,31 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     const phase = purr && purr.level() > 0.05 ? purr.phase() : null
     cat.update(dt, touches, pointer, phase)
     simT += dt
+    if (cat.finger.on) stats.petSec += dt
+    if (cat.bliss > 0.6) {
+      stats.blissSec += dt
+      blissRun += dt
+    } else {
+      if (blissRun >= 5 && blissRun > blissMaxSent) {
+        blissMaxSent = blissRun
+        hooks.onTrack('bliss_max', { seconds: Math.round(blissRun) })
+      }
+      blissRun = 0
+    }
+    if (cat.asleep) say('cat_zzz')
+    else moodLine()
+    flushLine(nowMs)
     // audio + haptics
     if (purr) {
       // bliss drives the level; touching a bliss zone gives an immediate audible floor
-      const zoneOn = cat.finger.on && (cat.zone === 'chin' || cat.zone === 'cheek' || cat.zone === 'top')
-      purr.set(zoneOn ? Math.max(0.6, cat.bliss) : cat.bliss)
+      const zoneOn = cat.finger.on && cat.irk < 0.4 && (cat.zone === 'chin' || cat.zone === 'cheek' || cat.zone === 'top' || cat.zone === 'earbase')
+      // irritation thins the purr out; at 0.7 it stops (cut once by the ladder)
+      const target = cat.irkStage >= 2 || cat.belly === 'trap' ? 0 : (zoneOn ? Math.max(0.6, cat.bliss) : cat.bliss) * (1 - 0.6 * Math.min(1, cat.irk / 0.7)) * (cat.asleep ? 0.5 : 1)
+      purr.set(target)
+      if (purr.level() > 0.2) {
+        if (stats.purrSec === 0) hooks.onTrack('purr_start')
+        stats.purrSec += dt
+      }
       hiss?.set((maxSpeed / cat.HW) * (125 / 900))
       const lvl = purr.level()
       const now = performance.now()
@@ -269,7 +540,15 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     }
   }
 
+  let sleepAcc = 0
   const frame = (dtRaw: number) => {
+    if (cat.asleep && freezeAt === null && cat.baker.done && ![...ptrs.values()].some((p) => p.down)) {
+      // asleep: 20 fps is plenty for breathing and the drifting z
+      sleepAcc += dtRaw
+      if (sleepAcc < 0.05) return
+      dtRaw = Math.min(0.1, sleepAcc)
+    }
+    sleepAcc = 0
     const now = performance.now()
     const delta = now - lastNow
     lastNow = now
@@ -286,6 +565,10 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
         while (simT < freezeAt - 1e-6) step(Math.min(DT, freezeAt - simT), now)
         frozen = true
       }
+    } else if (dtRaw > 0.034) {
+      // a 20 fps sleep frame: two half steps keep the springs stable
+      step(dtRaw / 2, now)
+      step(dtRaw / 2, now)
     } else step(dtRaw, now)
     cat.draw(ctx, true)
     if (!reactionPending) ensureVoices()
@@ -369,8 +652,30 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     dbg.purr = purr ? { mode: purr.mode, level: purr.level(), phase: purr.phase() } : null
   }
   const stop = runLoop(frame)
+  dbg.stats = stats
 
   return {
+    stats,
+    rating,
+    lineY() {
+      const r = cat.rugRect(w, h)
+      return Math.min(h - 72, r.y1 + 0.1 * cat.HW + 14)
+    },
+    snapshot() {
+      const r = cat.rugRect(w, h)
+      const pad = 16
+      const x0 = Math.max(0, r.x0 - pad)
+      const y0 = Math.max(0, r.y0 - pad)
+      const x1 = Math.min(w, r.x1 + pad)
+      const y1 = Math.min(h, r.y1 + pad)
+      // a clean frame: no finger shadow on the receipt
+      cat.draw(ctx, false)
+      const out = document.createElement('canvas')
+      out.width = Math.round((x1 - x0) * dpr)
+      out.height = Math.round((y1 - y0) * dpr)
+      out.getContext('2d')!.drawImage(canvas, x0 * dpr, y0 * dpr, out.width, out.height, 0, 0, out.width, out.height)
+      return out
+    },
     dispose() {
       stop()
       purr?.stop()

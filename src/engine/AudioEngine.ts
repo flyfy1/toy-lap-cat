@@ -103,7 +103,7 @@ class AudioEngine {
       comp.attack.value = 0.002
       comp.release.value = 0.18
       const master = ctx.createGain()
-      master.gain.value = 0.8
+      master.gain.value = this.muted ? 0 : 0.8
       master.connect(comp).connect(ctx.destination)
       const len = ctx.sampleRate * 2
       const buf = ctx.createBuffer(1, len, ctx.sampleRate)
@@ -565,6 +565,76 @@ class AudioEngine {
         src.stop(ctx.currentTime + 0.3)
       },
     }
+  }
+
+  // ---------- Lap Cat one-shots (all quiet; nothing harsh in a cozy toy) ----------
+
+  /** Soft tail thump on the blanket: sine 90 -> 50 Hz, 60 ms. */
+  thump(gain = 0.2): void {
+    if (this.muted) return
+    this.tone({ freq: 90, freqEnd: 50, dur: 0.07, gain, attack: 0.003 })
+    this.noise({ dur: 0.05, gain: gain * 0.25, filter: 'lowpass', freq: 500 })
+  }
+  /** Swat: a short whoosh and a small 2 kHz tick. */
+  swat(): void {
+    if (this.muted) return
+    this.noise({ dur: 0.12, gain: 0.12, filter: 'bandpass', freq: 900, freqEnd: 2600, q: 0.9, attack: 0.02 })
+    this.tone({ freq: 2000, type: 'triangle', dur: 0.03, gain: 0.08, delay: 0.1 })
+  }
+  /** Tiny sneeze: 60 ms of highpassed noise. */
+  sneeze(): void {
+    if (this.muted) return
+    this.noise({ dur: 0.06, gain: 0.12, filter: 'highpass', freq: 2500, q: 0.7 })
+  }
+  /** Waking trill ("mrrp"): sawtooth 520 -> 780 -> 600 Hz through two formants, 8 Hz vibrato. */
+  trill(): void {
+    if (this.muted || !this.ok) return
+    const ctx = this.ctx!
+    const t0 = ctx.currentTime
+    const o = ctx.createOscillator()
+    o.type = 'sawtooth'
+    o.frequency.setValueAtTime(520, t0)
+    o.frequency.linearRampToValueAtTime(780, t0 + 0.1)
+    o.frequency.linearRampToValueAtTime(600, t0 + 0.22)
+    const vib = ctx.createOscillator()
+    vib.frequency.value = 8
+    const vg = ctx.createGain()
+    vg.gain.value = 18
+    vib.connect(vg).connect(o.frequency)
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.exponentialRampToValueAtTime(0.06, t0 + 0.03)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24)
+    for (const [f, q, k] of [
+      [1200, 6, 1],
+      [2600, 8, 0.5],
+    ]) {
+      const bp = ctx.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = f
+      bp.Q.value = q
+      const kg = ctx.createGain()
+      kg.gain.value = k
+      o.connect(bp).connect(kg).connect(g)
+    }
+    g.connect(this.master!)
+    o.start(t0)
+    vib.start(t0)
+    o.stop(t0 + 0.26)
+    vib.stop(t0 + 0.26)
+  }
+  /** A paw nudging a glass across the blanket. */
+  clink(): void {
+    if (this.muted) return
+    this.tone({ freq: 2600 + Math.random() * 400, type: 'sine', dur: 0.18, gain: 0.04 })
+    this.noise({ dur: 0.08, gain: 0.03, filter: 'bandpass', freq: 1200, q: 1 })
+  }
+  /** The glass going off the edge: a muffled crash and a few tinkles (no boom). */
+  glassFall(): void {
+    if (this.muted) return
+    this.noise({ dur: 0.5, gain: 0.16, filter: 'highpass', freq: 1500, freqEnd: 4000, attack: 0.002 })
+    this.tone({ freq: 110, freqEnd: 60, dur: 0.12, gain: 0.12 })
+    for (let k = 0; k < 14; k++) this.tone({ freq: 2500 + Math.random() * 4500, type: 'sine', dur: 0.06 + Math.random() * 0.2, gain: 0.025, delay: Math.pow(Math.random(), 1.5) * 0.8, pan: Math.random() * 2 - 1 })
   }
 
   /** The shared noise buffer, for offline renders (tests). */

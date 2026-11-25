@@ -2,6 +2,7 @@
 // Drawn every frame in head-local HW units on top of the baked head.
 
 import { EYE, NOSE } from './rig'
+import { COAT } from './palette'
 
 export interface FaceState {
   /** eye openness, left and right (1 open, 0 closed) */
@@ -20,9 +21,19 @@ export interface FaceState {
   padPush: number
   /** extra whisker angle (radians), for twitches */
   whisk: number
+  /** 0..1 pupils to vertical slits (irk) */
+  slit: number
+  /** 0..1 eyes cross (boop) */
+  cross: number
+  /** 0..1 mouth open: yawn (teeth only here) */
+  yawn: number
+  /** 0..1 small open mouth (bite hold) */
+  bite: number
+  /** 0..1 tongue out (grooming lick) */
+  lick: number
 }
 
-export const restFace = (): FaceState => ({ open: [1, 1], squint: [0, 0], happy: 0, pupil: [0, 0], pupilSize: 0.7, look: 0, padPush: 0, whisk: 0 })
+export const restFace = (): FaceState => ({ open: [1, 1], squint: [0, 0], happy: 0, pupil: [0, 0], pupilSize: 0.7, look: 0, padPush: 0, whisk: 0, slit: 0, cross: 0, yawn: 0, bite: 0, lick: 0 })
 
 const LID = '#2A211C'
 
@@ -120,15 +131,16 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     lensPath(c, g, q)
     c.clip()
     // iris: soft green with a warm hazel ring round the pupil and a warm olive-brown rim
-    const pxo = cx + s.pupil[0]
+    const pxo = cx + s.pupil[0] - side * 0.04 * s.cross
     const pyo = cy + s.pupil[1]
     const ig = c.createRadialGradient(pxo, pyo, 0.01, cx, cy, EYE.w * 0.56)
-    ig.addColorStop(0, '#C8B860')
-    ig.addColorStop(0.3, '#C2C56C')
-    ig.addColorStop(0.58, '#A9BE66')
-    ig.addColorStop(0.8, '#93AE5E')
-    ig.addColorStop(0.93, '#86894A')
-    ig.addColorStop(1, '#6E6238')
+    const I = COAT.iris
+    ig.addColorStop(0, I[0])
+    ig.addColorStop(0.3, I[1])
+    ig.addColorStop(0.58, I[2])
+    ig.addColorStop(0.8, I[3])
+    ig.addColorStop(0.93, I[4])
+    ig.addColorStop(1, I[5])
     c.fillStyle = ig
     c.fillRect(cx - 0.2, cy - 0.2, 0.4, 0.4)
     // faint radial iris fibres
@@ -148,8 +160,15 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     pg.addColorStop(1, 'rgba(15,13,12,0)')
     c.fillStyle = pg
     c.beginPath()
-    c.arc(pxo, pyo, pr * 1.08, 0, Math.PI * 2)
-    c.fill()
+    if (s.slit > 0.01) {
+      c.setTransform(c.getTransform().scale(1 - 0.78 * s.slit, 1 + 0.12 * s.slit, 1, pxo, pyo))
+      c.arc(pxo, pyo, pr * 1.08, 0, Math.PI * 2)
+      c.fill()
+      c.setTransform(c.getTransform().scale(1 / (1 - 0.78 * s.slit), 1 / (1 + 0.12 * s.slit), 1, pxo, pyo))
+    } else {
+      c.arc(pxo, pyo, pr * 1.08, 0, Math.PI * 2)
+      c.fill()
+    }
     // upper lid casts a soft shadow onto the eye
     const sg = c.createLinearGradient(0, lidY - 0.02, 0, lidY + h * 0.34)
     sg.addColorStop(0, 'rgba(30,22,14,0.5)')
@@ -200,6 +219,12 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.moveTo(ix, g.iy + 0.01)
     c.quadraticCurveTo(cx, cy1, ox, g.oy + 0.012)
     c.stroke()
+    if (COAT.id === 'tux' || COAT.id === 'void') {
+      // on dark fur the closed eye is a pale lash line, or it vanishes
+      c.strokeStyle = 'rgba(236,222,204,0.85)'
+      c.lineWidth = 1.2 * px
+      c.stroke()
+    }
     c.restore()
   }
 }
@@ -215,9 +240,9 @@ export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) 
   // nose: rounded inverted triangle
   c.save()
   const ng = c.createLinearGradient(0, ny - nh / 2, 0, ny + nh / 2)
-  ng.addColorStop(0, '#F0ADA6')
-  ng.addColorStop(0.55, '#E8958F')
-  ng.addColorStop(1, '#C97A74')
+  ng.addColorStop(0, COAT.nose[0])
+  ng.addColorStop(0.55, COAT.nose[1])
+  ng.addColorStop(1, COAT.nose[2])
   c.fillStyle = ng
   c.beginPath()
   c.moveTo(-nw / 2, ny - nh / 2 + 0.006)
@@ -241,9 +266,64 @@ export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) 
   c.quadraticCurveTo(0, ny + nh * 0.62, nw * 0.3, ny + nh * 0.12)
   c.stroke()
 
-  // philtrum + "w" mouth
+  // philtrum + "w" mouth (or an open mouth when yawning / holding a bite)
   const mTop = ny + nh / 2
   const my = mTop + 0.03
+  const open = Math.max(s.yawn * 0.22, s.bite * 0.07)
+  if (open > 0.008) {
+    const mw = 0.07 + 0.06 * Math.min(1, open / 0.12)
+    const top = my - 0.004
+    c.save()
+    c.beginPath()
+    c.moveTo(-mw, top)
+    c.quadraticCurveTo(0, top - 0.012, mw, top)
+    c.bezierCurveTo(mw * 0.9, top + open * 0.9, mw * 0.4, top + open * 1.15, 0, top + open * 1.15)
+    c.bezierCurveTo(-mw * 0.4, top + open * 1.15, -mw * 0.9, top + open * 0.9, -mw, top)
+    c.closePath()
+    const mg = c.createLinearGradient(0, top, 0, top + open)
+    mg.addColorStop(0, '#5A2F2E')
+    mg.addColorStop(1, '#7E3E3C')
+    c.fillStyle = mg
+    c.fill()
+    c.clip()
+    // tongue, curled up at the tip
+    c.fillStyle = '#E58C8A'
+    c.beginPath()
+    c.ellipse(0, top + open * 1.05, mw * 0.62, open * 0.42, 0, 0, Math.PI * 2)
+    c.fill()
+    c.strokeStyle = 'rgba(160,70,70,0.5)'
+    c.lineWidth = 0.8 * px
+    c.beginPath()
+    c.moveTo(0, top + open * 0.75)
+    c.lineTo(0, top + open * 1.1)
+    c.stroke()
+    if (s.yawn > 0.35) {
+      // the only time teeth show: two small fangs
+      c.fillStyle = '#FBF6EE'
+      for (const sd of [-1, 1]) {
+        c.beginPath()
+        c.moveTo(sd * mw * 0.62, top + 0.002)
+        c.lineTo(sd * mw * 0.48, top + 0.002)
+        c.lineTo(sd * mw * 0.55, top + 0.028)
+        c.closePath()
+        c.fill()
+      }
+    }
+    c.restore()
+    c.strokeStyle = '#5A3F3A'
+    c.lineWidth = 1.1 * px
+    c.beginPath()
+    c.moveTo(0, mTop)
+    c.lineTo(0, top - 0.008)
+    c.stroke()
+  }
+  if (s.lick > 0.02) {
+    c.fillStyle = '#E58C8A'
+    c.beginPath()
+    c.ellipse(0, my + 0.006 + 0.008 * s.lick, 0.022, 0.006 + 0.01 * s.lick, 0, 0, Math.PI * 2)
+    c.fill()
+  }
+  if (open <= 0.008) {
   c.strokeStyle = '#5A3F3A'
   c.lineWidth = 1.2 * px
   c.beginPath()
@@ -254,6 +334,7 @@ export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) 
   c.moveTo(0, my)
   c.quadraticCurveTo(0.035, my + 0.035, 0.08, my + 0.004)
   c.stroke()
+  }
 
   // whisker dots on the pads
   c.fillStyle = 'rgba(80,58,46,0.5)'

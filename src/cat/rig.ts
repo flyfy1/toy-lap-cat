@@ -3,11 +3,12 @@
 
 import type { PathFn } from './field'
 import { clamp01, makeNoise, smoothstep } from './noise'
+import { COAT } from './palette'
 
 export const D2R = Math.PI / 180
 export type V2 = [number, number]
 
-export type PartId = 'tailA' | 'tailB' | 'torso' | 'thigh' | 'footNear' | 'legFar' | 'chest' | 'legNear' | 'earL' | 'earR' | 'head'
+export type PartId = 'tailA' | 'tailB' | 'tailC' | 'belly' | 'torso' | 'thigh' | 'footNear' | 'legFar' | 'chest' | 'legNear' | 'earL' | 'earR' | 'head'
 
 /** Pattern sample: white amount, stripe amount, tone multiplier (1 = plain coat). */
 export interface Pat {
@@ -204,6 +205,7 @@ export const spine = new Curve([
   [1.08, 0.16],
 ])
 const thick = (u: number) =>
+  COAT.wide *
   lerpPiece(u, [
     [0, 0.84],
     [0.22, 1.1],
@@ -226,6 +228,14 @@ export const tailCurve = new Curve([
 ])
 const tailR = (u: number) => (0.098 - 0.026 * u) * (u > 0.955 ? Math.sqrt(Math.max(0, 1 - (u - 0.955) / 0.05)) * 0.88 + 0.12 : 1)
 export const TAIL_JOINT = 0.27
+/** the tail tip (tailC) swings about this point: twitch, thump, whip, curl */
+export const TAIL_TIP_JOINT = 0.76
+
+/** Torso coordinates of a cat-space point: u along the spine (0 neck .. 1 rump), v across (0 spine .. 1 belly). */
+export function torsoUV(x: number, y: number) {
+  const { u, s } = spine.nearest(x, y)
+  return { u, v: s / thick(u) }
+}
 
 // near front leg: from the shoulder down and forward, wrist bent, paw curled up toward the chin, sole to the viewer
 const legNearC = new Curve([
@@ -679,10 +689,10 @@ export function buildRig(o: RigOpts): PartDef[] {
     },
   }
   // ---- tail ----
-  const tailDef = (id: 'tailA' | 'tailB', u0: number, u1: number): PartDef => ({
+  const tailDef = (id: 'tailA' | 'tailB' | 'tailC', u0: number, u1: number): PartDef => ({
     id,
-    bbox: id === 'tailA' ? [0.72, -0.15, 1.38, 0.78] : [-0.55, 0.38, 1.32, 0.92],
-    path: (c) => sweep(c, tailCurve, tailR, () => 0, id === 'tailA' ? 20 : 70, u0, u1),
+    bbox: id === 'tailA' ? [0.72, -0.15, 1.38, 0.78] : id === 'tailB' ? [-0.1, 0.38, 1.32, 0.92] : [-0.62, 0.3, 0.3, 0.92],
+    path: (c) => sweep(c, tailCurve, tailR, () => 0, id === 'tailA' ? 20 : 50, u0, u1),
     toCat: ident,
     R: 0.09,
     flow(x, y) {
@@ -707,13 +717,31 @@ export function buildRig(o: RigOpts): PartDef[] {
     },
   })
 
+  // ---- belly: the soft white tummy shown when the cat rolls over (drawn with alpha = roll) ----
+  const BC: V2 = [0.12, 0.3]
+  const belly: PartDef = {
+    id: 'belly',
+    bbox: [-0.62, -0.12, 0.86, 0.72],
+    path: (c) => ell(c, BC[0], BC[1], 0.62, 0.3, -0.06),
+    toCat: ident,
+    R: 0.3,
+    density: 0.9,
+    fringe: 1.2,
+    flow: (x, y) => Math.atan2(y - BC[1] + 0.05, x - BC[0]) + 0.25 * n1(x * 5, y * 5),
+    len: () => 0.085,
+    jitter: () => 28 * D2R,
+    pat: (x) => ({ w: 1, s: 0, tone: 1.02 - 0.04 * smoothstep(0.3, 0.7, Math.abs(x - BC[0])) }),
+  }
+
   // draw order (back to front)
   return [
     tailDef('tailA', 0, TAIL_JOINT + 0.03),
     torso,
+    belly,
     thigh,
     footNear,
-    tailDef('tailB', TAIL_JOINT - 0.02, 1),
+    tailDef('tailB', TAIL_JOINT - 0.02, TAIL_TIP_JOINT + 0.02),
+    tailDef('tailC', TAIL_TIP_JOINT - 0.02, 1),
     legDef('legFar', legFarC, PAW_FAR, 0.94, false),
     chest,
     legDef('legNear', legNearC, PAW_NEAR, 1.12, true),

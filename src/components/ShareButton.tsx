@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { t, type ToyId } from '../i18n'
-import { NETWORKS, shareText, shareUrl } from '../share'
+import { NETWORKS, shareText, shareUrl, stats } from '../share'
 import { track } from '../analytics'
+import { pillClass } from './MoreMenu'
 
 const isTouch = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 
@@ -12,6 +13,9 @@ function qrDataUrl(text: string): string {
   qr.make()
   return qr.createDataURL(6, 2)
 }
+
+/** knock: the lifetime count rides along on the share event (a number, never user text). */
+const shareExtra = (toy: ToyId): Record<string, number> => (toy === 'knock' && stats.n ? { total: stats.n } : {})
 
 export function ShareButton({ toy }: { toy: ToyId }) {
   const [open, setOpen] = useState(false)
@@ -32,7 +36,7 @@ export function ShareButton({ toy }: { toy: ToyId }) {
     if (isTouch() && navigator.share) {
       try {
         await navigator.share({ title: document.title, text, url })
-        track('share', { method: 'native' })
+        track('share', { method: 'native', ...shareExtra(toy) })
         return
       } catch (err) {
         if ((err as DOMException)?.name === 'AbortError') return
@@ -56,16 +60,12 @@ export function ShareButton({ toy }: { toy: ToyId }) {
       ta.remove()
     }
     setCopied(true)
-    track('share', { method: 'copy' })
+    track('share', { method: 'copy', ...shareExtra(toy) })
   }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={start}
-        className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white/80 backdrop-blur-md hover:bg-white/20 active:scale-95"
-      >
+      <button type="button" onClick={start} className={pillClass(toy)}>
         ↗ {t('share')}
       </button>
       {open && (
@@ -73,7 +73,7 @@ export function ShareButton({ toy }: { toy: ToyId }) {
           <div
             role="dialog"
             aria-label={t('share_heading')}
-            className="w-full max-w-sm rounded-3xl border border-white/15 bg-[#0d0d1a] p-5 text-white shadow-2xl"
+            className={`w-full max-w-sm rounded-3xl border border-white/15 ${toy === 'knock' ? 'bg-[#1f140d]' : toy === 'purr' ? 'bg-[#2a1f17]' : 'bg-[#0d0d1a]'} p-5 text-white shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
@@ -97,7 +97,7 @@ export function ShareButton({ toy }: { toy: ToyId }) {
                   href={n.href(payload.url, payload.text)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => track('share', { method: n.id })}
+                  onClick={() => track('share', { method: n.id, ...shareExtra(toy) })}
                   className="rounded-xl bg-white/10 px-1 py-2 text-center text-xs text-white/85 hover:bg-white/20"
                 >
                   {n.label}

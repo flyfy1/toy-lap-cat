@@ -4,7 +4,7 @@
 
 import { Field } from './field'
 import { clamp01, mulberry32, smoothstep } from './noise'
-import { P, type RGB, mix, scale } from './palette'
+import { COAT, P, type RGB, mix, scale } from './palette'
 import { type PartDef, type PartId, apply, earInnerPath as earInner } from './rig'
 
 export interface Sprite {
@@ -56,6 +56,7 @@ export const shadeFor = (L: number, w: number) => L + (1 - L) * 0.55 * w * (L < 
 
 /** Coat colour for a pattern sample and pass (0 undercoat, 1 mid, 2 tips). */
 export function coat(w: number, s: number, tone: number, pass: number, r: number): RGB {
+  s *= COAT.stripe
   let tab: RGB
   let str: RGB
   let wh: RGB
@@ -71,7 +72,7 @@ export function coat(w: number, s: number, tone: number, pass: number, r: number
     // agouti ticking: most tips pale, a few dark
     tab = r < 0.86 ? mix(P.base, P.tip, (r / 0.86) * 0.85) : P.stripe
     str = r < 0.8 ? mix(P.stripe, P.stripeCore, r) : P.base
-    wh = mix(P.white, [255, 253, 248], r)
+    wh = COAT.id === 'void' ? mix(P.white, P.tip, r * 0.5) : mix(P.white, [255, 253, 248], r)
   }
   const t = scale(mix(tab, str, s), tone)
   return mix(t, scale(wh, 0.5 + 0.5 * Math.min(1.08, tone)), w)
@@ -258,9 +259,9 @@ export class Baker {
     const c = sp.c
     c.save()
     const g = c.createLinearGradient(0, 0.02, 0, -0.3)
-    g.addColorStop(0, '#C98F86')
-    g.addColorStop(0.45, P.innerEar)
-    g.addColorStop(1, '#D99C92')
+    g.addColorStop(0, COAT.innerEar[0])
+    g.addColorStop(0.45, COAT.innerEar[1])
+    g.addColorStop(1, COAT.innerEar[2])
     c.fillStyle = g
     c.beginPath()
     earInner(c)
@@ -305,7 +306,8 @@ export class Baker {
             let len = def.len(x, y) * pass.len * (0.7 + rnd() * 0.55)
             let dx = Math.cos(a)
             let dy = Math.sin(a)
-            if (d < 0.045) {
+            const edge = d < 0.045
+            if (edge) {
               // fringe: tips cross the silhouette
               const g = f.grad(x, y)
               const k = 0.3 * (1 - d / 0.045)
@@ -321,7 +323,17 @@ export class Baker {
             const r = rnd()
             let col = coat(pt.w, pt.s, pt.tone, pi, r)
             col = scale(col, Math.pow(L, 0.75) * (0.93 + rnd() * 0.14))
-            const key = (Math.min(255, col[0]) >> 3) | ((Math.min(255, col[1]) >> 3) << 5) | ((Math.min(255, col[2]) >> 3) << 10)
+            if (edge) {
+              // soft edge: dark hairs against the light rug read as spikes, so the fringe is lifted
+              // toward a warm mid tone, kept shorter, and drawn see-through (below)
+              const lu = col[0] * 0.3 + col[1] * 0.59 + col[2] * 0.11
+              if (lu < 120) {
+                const k = 0.35 * (1 - lu / 120)
+                col = [col[0] + (150 - col[0]) * k, col[1] + (128 - col[1]) * k, col[2] + (104 - col[2]) * k]
+                len *= 0.82
+              }
+            }
+            const key = ((Math.min(255, col[0]) >> 3) | ((Math.min(255, col[1]) >> 3) << 5) | ((Math.min(255, col[2]) >> 3) << 10)) + (edge ? 1 << 15 : 0)
             let p = buckets.get(key)
             if (!p) buckets.set(key, (p = new Path2D()))
             const w = pass.w * (0.8 + rnd() * 0.4) * (pi === 2 && pt.w > 0.5 ? 0.9 : 1)
@@ -342,8 +354,9 @@ export class Baker {
           const c = sp.c
           c.save()
           c.globalAlpha = pass.alpha
-          const keys = [...buckets.keys()].sort((ka, kb) => lum(ka) - lum(kb))
+          const keys = [...buckets.keys()].sort((ka, kb) => lum(ka & 0x7fff) - lum(kb & 0x7fff))
           for (const k of keys) {
+            c.globalAlpha = k >> 15 ? pass.alpha * 0.55 : pass.alpha
             c.fillStyle = `rgb(${(k & 31) << 3},${((k >> 5) & 31) << 3},${((k >> 10) & 31) << 3})`
             c.fill(buckets.get(k)!)
           }
