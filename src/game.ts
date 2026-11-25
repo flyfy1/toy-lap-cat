@@ -102,7 +102,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       const sp = (6 * k * (1 - k)) / (t1 - t0) / 0.01 + 1e-6
       return { x: a.x, y: a.y, vx: (b.x - a.x) * sp, vy: (b.y - a.y) * sp }
     }
-    return lane(-2.7, -1.95, 0.8, 0.2, 0.42) ?? seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ?? lane(-0.95, -0.05, 0.14, 0.86, 0.13)
+    return lane(-2.7, -1.95, 0.8, 0.2, 0.52) ?? seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ?? lane(-0.95, -0.05, 0.14, 0.86, 0.25)
   }
 
   // ---------- input ----------
@@ -186,6 +186,8 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   canvas.addEventListener('pointercancel', onUp)
   canvas.addEventListener('pointerleave', onLeave)
   const onVis = () => {
+    calm.length = 0
+    calmSince = performance.now()
     if (document.hidden) {
       stopVibe()
       haptic(0)
@@ -243,7 +245,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       if (touchOnCat && lvl > 0.2 && !audio.muted) {
         const ph = purr.phase()
         const exhale = ph > 0.44
-        if (now - lastVibe > 600 && (cat.bliss > 0.45 || exhale)) {
+        if (now - lastVibe > 600 && (cat.bliss > 0.45 || exhale || !vibing)) {
           const on = cat.bliss < 0.45 ? 8 : cat.bliss < 0.75 ? 14 : 22
           const pat: number[] = []
           for (let i = 0; i < 15; i++) pat.push(on, 40 - on)
@@ -285,7 +287,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       if (!cat.baker.done || document.hidden) {
         calmSince = now
         calm.length = 0
-      } else if (now - calmSince > 500) calm.push(delta)
+      } else if (now - calmSince > 500 && delta < 100) calm.push(delta)
       if (calm.length > 240) calm.shift()
       {
         let sum = 0

@@ -73,7 +73,7 @@ export class Cat {
   earFold = [new Spring(0, 300, 13), new Spring(0, 300, 13)]
   earTurn = [new Spring(0, 80, 18), new Spring(0, 80, 18)]
   squint = [new Spring(0, 160, 25), new Spring(0, 160, 25)]
-  lidBase = new Spring(0.9, 120, 22)
+  lidBase = new Spring(0.96, 120, 22)
   slideX = new Spring(0, 120, 14)
   slideY = new Spring(0, 120, 14)
   breath = 0 // 0..1 phase
@@ -102,7 +102,7 @@ export class Cat {
   timings: Record<string, number> = {}
   layout(w: number, h: number, dpr: number, keepBake = false) {
     const HW = Math.min(w / 3.55, h / 3.4)
-    this.ox = w / 2 + HW * 0.02
+    this.ox = w / 2 + HW * 0.1
     this.oy = h * 0.47
     const changed = !this.baker || (!keepBake && Math.abs(HW * dpr - this.HW * this.dpr) > 1) || Math.abs(HW - this.HW) > 1
     this.HW = HW
@@ -411,7 +411,7 @@ export class Cat {
     let hy = 0
     let hr = 0
     let lk = 0
-    let lid = 0.9
+    let lid = 0.96
     let happy = 0
     const fold = [0, 0]
     const sq = [0, 0]

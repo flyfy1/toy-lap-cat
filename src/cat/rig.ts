@@ -38,6 +38,8 @@ export interface PartDef {
   ao?: [number, number, number, number][]
   /** where no fur strokes go (local), e.g. the inner ear */
   noFur?: (x: number, y: number) => boolean
+  /** fringe length multiplier (default 1.05) */
+  fringe?: number
   /** extra painting on the baked sprite after shading (local coords) */
   decorate?: (c: CanvasRenderingContext2D) => void
   tufts?: boolean
@@ -228,7 +230,8 @@ const legFarC = new Curve([
   [-0.38, 0.55],
 ])
 export const PAW_NEAR = { x: -0.71, y: 0.5, a: Math.atan2(0.5, -0.32) }
-export const PAW_FAR = { x: -0.43, y: 0.63, a: Math.atan2(0.6, -0.12) }
+// far paw tucked: curled back toward the chest (deliberate asymmetry with the near paw)
+export const PAW_FAR = { x: -0.4, y: 0.57, a: Math.atan2(0.55, 0.5) }
 export const THIGH = { x: 0.95, y: 0.25, rx: 0.375, ry: 0.275, r: 30 * D2R }
 export const FOOT_NEAR = { x: 0.45, y: 0.78, rx: 0.21, ry: 0.085 }
 export const FOOT_FAR = { x: 0.62, y: 0.86, rx: 0.2, ry: 0.08 }
@@ -487,6 +490,7 @@ export function buildRig(o: RigOpts): PartDef[] {
     },
     toCat: ident,
     R: 0.1,
+    fringe: 0.7,
     decorate(c) {
       // soft creases between the toes
       const k = s * 1.12
@@ -570,6 +574,7 @@ export function buildRig(o: RigOpts): PartDef[] {
     },
     toCat: ident,
     R: 0.08,
+    fringe: 0.7,
     flow: (x, y) => (y < f.y - 0.08 ? Math.PI * 0.55 : Math.PI + 0.1) + 0.12 * n1(x * 10, y * 10),
     len: () => 0.03,
     jitter: () => 12 * D2R,

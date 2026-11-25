@@ -18,6 +18,8 @@ export interface Sprite {
   bw: number
   bh: number
   strokes: number
+  /** underlay colours at field resolution (to find white fur when shading) */
+  under?: ImageData | null
 }
 
 const LIGHT = (() => {
@@ -46,6 +48,9 @@ export function lightAt(def: PartDef, f: Field, x: number, y: number): number {
   const gg = 1 - 0.22 * smoothstep(-1.4, 1.6, cx * 0.55 + cy * 0.85)
   return Math.max(0.45, Math.min(1.18, (0.52 + 0.6 * Math.max(diff, -0.2)) * gg))
 }
+
+/** White fur keeps more light in the shadows (it scatters), so it never turns grey. */
+export const shadeFor = (L: number, w: number) => L + (1 - L) * 0.55 * w * (L < 1 ? 1 : 0)
 
 /** Coat colour for a pattern sample and pass (0 undercoat, 1 mid, 2 tips). */
 export function coat(w: number, s: number, tone: number, pass: number, r: number): RGB {
@@ -178,7 +183,7 @@ export class Baker {
             const d = f.sample(x, y)
             if (d < inset - soft - (this.o.fur ? 0 : 0.03)) continue
             const pt = def.pat(x, y)
-            const L = lightAt(def, f, x, y)
+            const L = shadeFor(lightAt(def, f, x, y), pt.w)
             let col = coat(pt.w, pt.s * 0.85, pt.tone, 1, 0.45)
             col = scale(col, this.o.fur ? (0.86 + 0.08 * pt.w) * L : L)
             const k = (j * W + i) * 4
@@ -189,6 +194,7 @@ export class Baker {
           }
       })
     }
+    sp.under = SS === 1 ? img : null
     this.jobs.push(() => {
       const tmp = document.createElement('canvas')
       tmp.width = W
@@ -262,7 +268,7 @@ export class Baker {
             if (def.noFur?.(x, y)) continue
             made++
             const pt = def.pat(x, y)
-            const L = lightAt(def, f, x, y)
+            const L = shadeFor(lightAt(def, f, x, y), pt.w)
             let a = def.flow(x, y) + (rnd() * 2 - 1) * def.jitter(x, y)
             let len = def.len(x, y) * pass.len * (0.7 + rnd() * 0.55)
             let dx = Math.cos(a)
@@ -277,7 +283,7 @@ export class Baker {
               dx /= l
               dy /= l
               // dark undercoat stays inside; only mid and tip hairs make the fringe
-              len *= pi === 0 ? 0.6 : 1.05
+              len *= pi === 0 ? 0.6 : (def.fringe ?? 1.05)
               a = Math.atan2(dy, dx)
             }
             const r = rnd()
@@ -329,11 +335,16 @@ export class Baker {
         if (d < -0.08) continue
         const L = lightAt(def, f, x, y)
         const k = (j * f.w + i) * 4
+        let white = 0
+        if (sp.under) {
+          const u = sp.under.data
+          white = smoothstep(150, 200, u[k] * 0.3 + u[k + 1] * 0.59 + u[k + 2] * 0.11)
+        }
         if (L < 1) {
           px[k] = 40
           px[k + 1] = 28
           px[k + 2] = 20
-          px[k + 3] = 255 * Math.min(0.38, (1 - L) * 0.45)
+          px[k + 3] = 255 * Math.min(0.38, (1 - L) * 0.45) * (1 - 0.6 * white)
         } else {
           px[k] = 255
           px[k + 1] = 246

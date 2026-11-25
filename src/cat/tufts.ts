@@ -109,7 +109,8 @@ export class Groom {
       const l = Math.hypot(ax, ay)
       if (l > 0) {
         const dot = ax * this.fx[q] + ay * this.fy[q]
-        let nl = dot < -0.3 ? l * ak : l - dt / 2.5
+        // same threshold as the ruffle look: anything combed against the grain is slow to recover
+        let nl = dot < -0.08 ? l * ak : l - dt / 2.5
         if (nl < 0.004) nl = 0
         this.cx[q] = (ax / l) * nl
         this.cy[q] = (ay / l) * nl
