@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { applyMeta, t, type Key } from './i18n'
 import { startAnalytics, track } from './analytics'
-import { COATS, type Coat, catFromUrl, parseName, stats as shareStats, syncCatToUrl } from './share'
+import { COATS, type Coat, catFromUrl, parseName, stats as shareStats, syncCatToUrl, trackLanding, trackShare } from './share'
 import { Hint } from './components/Hint'
 import { MoreMenu, pillClass } from './components/MoreMenu'
-import { IconClose, IconPaw, IconReceipt, IconSave, IconShare, IconSpeaker } from './components/Icons'
+import { IconClose, IconShare } from './components/Icons'
+import { IconPaw, IconReceipt, IconSave, IconSpeaker } from './components/CatIcons'
 import { startGame, type CatStats, type GameApi } from './game'
 import { applyCoat } from './cat/palette'
 import { audio } from './engine/AudioEngine'
@@ -70,7 +71,7 @@ export default function App() {
     baseTitle.current = document.title
     if (OG) return
     startAnalytics('purr')
-    if (location.search.match(/[?&](n|c)=/)) track('shared_cat_open')
+    trackLanding()
     let sent = false
     const onHide = () => {
       if (sent || !statsRef.current) return
@@ -160,7 +161,7 @@ export default function App() {
     // the receipt renderer is loaded on demand (keeps the first load small)
     const { drawReceipt } = await import('./receipt')
     const cv = drawReceipt(snap, g.stats, r, nameRef.current)
-    track('share_card', { traps: g.stats.traps, rating_x10: Math.round(r * 10) })
+    track('share_open', { from: 'receipt', card: 1, traps: g.stats.traps, rating_x10: Math.round(r * 10) })
     const url = cv.toDataURL('image/png')
     setReceipt({ url, blob: null })
     cv.toBlob((b) => b && setReceipt((x) => (x && x.url === url ? { url, blob: b } : x)), 'image/png')
@@ -173,9 +174,10 @@ export default function App() {
   const shareReceipt = async () => {
     const f = file()
     if (!f) return
+    trackShare('method', 'file', 'receipt')
     try {
       await navigator.share({ files: [f], title: t('tax_title'), text: 'purr.integ.life' })
-      track('share', { method: 'card' })
+      trackShare('done', 'file', 'receipt')
     } catch {
       /* cancelled */
     }
@@ -260,7 +262,14 @@ export default function App() {
                 <span className="inline-flex items-center gap-2"><IconShare />{t('tax_share')}</span>
               </button>
             )}
-            <a href={receipt.url} download="cat-tax.png" className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
+            <a
+              href={receipt.url}
+              download="cat-tax.png"
+              onClick={() => {
+                trackShare('method', 'save', 'receipt')
+                trackShare('done', 'save', 'receipt')
+              }}
+              className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
               <span className="inline-flex items-center gap-2"><IconSave />{t('tax_save')}</span>
             </a>
             <button type="button" onClick={() => setReceipt(null)} aria-label="Close" className="rounded-full border border-[#FFF8EE]/40 px-3.5 py-2 text-sm text-[#FFF8EE]">

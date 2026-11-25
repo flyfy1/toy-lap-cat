@@ -1,6 +1,9 @@
-// Interface text for all the toys (shared file, copied into each repo). Lap Cat copy: the other toys'
-// play, share and description strings are trimmed out (the bundle budget); names stay for the More menu.
-// Five major languages, picked from the browser's language list; anything else falls back to English. Arcade shouts (CRITICAL!, CLEAR!, CHAIN, OVERDRIVE) stay English on purpose.
+// Interface text every toy shares (shared file, copied into each repo unchanged): the toy names for the
+// More menu, Share, More, About. Each toy's own text (hints, toasts, share lines) is in its strings.ts,
+// which is not shared, so a toy only ships its own words. Share sheet and card copy load with the sheet.
+// Five major languages, picked from the browser's language list; anything else falls back to English.
+// Arcade shouts (CRITICAL!, CLEAR!, CHAIN, OVERDRIVE) stay English on purpose.
+import TOY from './strings'
 
 export const LOCALES = [
   { code: 'en', label: 'English' },
@@ -11,405 +14,90 @@ export const LOCALES = [
 ] as const
 
 export type Locale = (typeof LOCALES)[number]['code']
-export type ToyId = 'charge' | 'void' | 'smash' | 'pop' | 'knock' | 'purr' | 'squish' | 'scratch' | 'peel'
+/** The live toys: listed in the More menu, their names are shared text. */
+export type LiveId = 'charge' | 'void' | 'smash' | 'pop' | 'knock' | 'purr' | 'squish' | 'scratch' | 'peel'
+/** Every toy id. A toy not yet live keeps its name in its own strings.ts until launch (then: LiveId, core name). */
+export type ToyId = LiveId | 'crunch' | 'pour' | 'stamp' | 'zip'
 
 const en = {
-  name_charge: 'Charge Burst',
-  name_void: 'Void Harvest',
-  name_smash: 'Glass Smash',
-  name_pop: 'Chain Pop',
-  more_games: 'More games · games.integ.life →',
-  about: 'How to play',
-  share: 'Share',
-  copy_link: 'Copy link',
-  copied: 'Link copied!',
-  scan: 'Scan to open on a phone, or to share in WeChat',
-  share_heading: 'Share with friends',
+  name_charge: "Charge Burst",
+  name_void: "Void Harvest",
+  name_smash: "Glass Smash",
+  name_pop: "Chain Pop",
   name_knock: "Knock on Wood",
+  name_purr: "Lap Cat",
   name_squish: "Squishy Bun",
   name_scratch: "Scratch That",
   name_peel: "Peel Off",
-  name_purr: 'Lap Cat',
-  desc_purr: 'A sleepy cat on a blanket. Stroke its fur and it leans in, slow-blinks and purrs, with sound and, on Android, a purr you can feel. The belly is a trap. A tiny cozy toy, no sign-up.',
-  hint_purr: 'Pet the cat · tap for sound',
-  hint_purr_m: 'Hold and drag to pet',
-  share_purr: '🐈 Pet a purring cat on your screen. Mind the belly:',
-  share_purr_stat: '🐈 I made the cat purr for {n}s. Your turn:',
-  cat_ok: "Acceptable.",
-  cat_left: "Left a bit.",
-  cat_there: "Yes. There. Do not stop.",
-  cat_continue: "You may continue, human.",
-  cat_tail: "The tail is not part of the deal.",
-  cat_fridge: "I am not purring. That is the fridge.",
-  cat_blink: "That was a slow blink. It means I tolerate you.",
-  cat_trap: "It was a trap. It is always a trap.",
-  cat_granted: "Belly access: granted. Do not tell anyone.",
-  cat_warn: "Consider that a verbal warning.",
-  cat_warned: "I did warn you.",
-  cat_knead: "Making biscuits. Do not disturb.",
-  cat_noted: "Your performance has been noted.",
-  cat_zzz: "zzz",
-  cat_gravity: "Gravity still works.",
-  cat_smash_chip: "Smash more glass: smash.integ.life →",
-  cat_boop: "Boop received. Filed under “unnecessary”.",
-  cat_beans: "The beans are not for public use.",
-  cat_belly_no: "That was not an invitation.",
-  cat_grain: "Wrong way. Fur has a direction.",
-  cat_rough: "Gently. I am not a carpet.",
-  cat_ears: "Behind the ears. Correct.",
-  cat_stretch: "Acceptable. Proceed down the back.",
-  cat_awake: "I was not asleep. I was resting my eyes.",
-  cat_coat_orange: "Not fat. Big boned.",
-  cat_coat_tux: "Certified unhinged.",
-  cat_coat_void: "I am the void. See also void.integ.life.",
-  tax_button: "Cat tax",
-  tax_title: "CAT TAX: PAID",
-  tax_cat: "Cat: {name}",
-  tax_pets: "Pets given",
-  tax_purr: "Purr time",
-  tax_biscuits: "Biscuits made",
-  tax_traps: "Traps fallen for",
-  tax_swats: "Swats received",
-  tax_rating: "Staff rating",
-  tax_r1: "dismissed",
-  tax_r2: "on probation",
-  tax_r3: "adequate",
-  tax_r4: "valued staff",
-  tax_r5: "employee of the month",
-  tax_share: "Share receipt",
-  tax_save: "Save image",
-  tax_sec: "{n} s",
-  cat_name_ph: "Your cat’s name",
-  cat_coat: "Coat",
-  coat_tabby: "Tabby",
-  coat_orange: "Orange",
-  coat_tux: "Tuxedo",
-  coat_void: "Void",
-  sound_on: "Sound on",
-  sound_off: "Sound off",
-  title_asleep: "zzz… {name} is asleep",
-  share_purr_name: "🐈 I am {name}’s staff. Come and pet {name} (mind the belly):",
+  share: "Share",
+  more: "More",
+  about: "How to play",
+  more_games: "More games · games.integ.life →",
 }
-export type Messages = typeof en
-
-const zhCN: Messages = {
-  name_charge: '蓄力核爆',
-  name_void: '黑洞收割',
-  name_smash: '暴力碎屏',
-  name_pop: '连锁泡泡',
-  more_games: '更多游戏 · games.integ.life →',
-  about: '玩法说明',
-  share: '分享',
-  copy_link: '复制链接',
-  copied: '链接已复制！',
-  scan: '手机扫码打开，或扫码分享到微信',
-  share_heading: '分享给朋友',
+const zhCN: typeof en = {
+  name_charge: "蓄力核爆",
+  name_void: "黑洞收割",
+  name_smash: "暴力碎屏",
+  name_pop: "连锁泡泡",
   name_knock: "电子木鱼",
+  name_purr: "云撸猫",
   name_squish: "捏捏团子",
   name_scratch: "刮一张",
   name_peel: "撕膜",
-  name_purr: '云撸猫',
-  desc_purr: '毯子上一只犯困的猫。顺着毛摸它，它会蹭过来、慢慢眨眼、呼噜呼噜；安卓手机上还能用手指感觉到呼噜震动。肚皮是陷阱。打开即玩的治愈小玩具。',
-  hint_purr: '摸摸猫 · 点一下开声音',
-  hint_purr_m: '按住拖动来撸猫',
-  share_purr: '🐈 在屏幕上撸一只会呼噜的猫，小心肚皮：',
-  share_purr_stat: '🐈 我让猫呼噜了 {n} 秒，你也来：',
-  cat_ok: "尚可。",
-  cat_left: "往左一点。",
-  cat_there: "对，就这儿，别停。",
-  cat_continue: "铲屎的，继续。",
-  cat_tail: "尾巴不在服务范围内。",
-  cat_fridge: "我没呼噜，那是冰箱。",
-  cat_blink: "慢慢眨眼的意思是：朕准了。",
-  cat_trap: "肚皮是陷阱。一直都是。",
-  cat_granted: "今日肚皮开放，不许外传。",
-  cat_warn: "这是口头警告。",
-  cat_warned: "勿谓言之不预。",
-  cat_knead: "踩奶中，勿扰。",
-  cat_noted: "你的表现已记录在案。",
-  cat_zzz: "呼……",
-  cat_gravity: "地心引力依然有效。",
-  cat_smash_chip: "还想砸？smash.integ.life →",
-  cat_boop: "鼻子已被戳，记为“多此一举”。",
-  cat_beans: "肉垫不对外开放。",
-  cat_belly_no: "那不是邀请。",
-  cat_grain: "方向反了，毛是有方向的。",
-  cat_rough: "轻点，朕不是地毯。",
-  cat_ears: "耳朵后面，正确。",
-  cat_stretch: "尚可，沿着背往下。",
-  cat_awake: "朕没睡，朕在闭目养神。",
-  cat_coat_orange: "大橘为重。",
-  cat_coat_tux: "奶牛猫，精神状态稳定（并不）。",
-  cat_coat_void: "朕就是黑洞。另见 void.integ.life。",
-  tax_button: "猫税",
-  tax_title: "猫税已缴",
-  tax_cat: "主子：{name}",
-  tax_pets: "撸猫次数",
-  tax_purr: "呼噜时长",
-  tax_biscuits: "踩奶次数",
-  tax_traps: "中计次数",
-  tax_swats: "挨打次数",
-  tax_rating: "铲屎官评分",
-  tax_r1: "已开除",
-  tax_r2: "试用期",
-  tax_r3: "尚可",
-  tax_r4: "优秀铲屎官",
-  tax_r5: "本月最佳铲屎官",
-  tax_share: "分享小票",
-  tax_save: "保存图片",
-  tax_sec: "{n} 秒",
-  cat_name_ph: "给猫起个名字",
-  cat_coat: "花色",
-  coat_tabby: "狸花",
-  coat_orange: "橘猫",
-  coat_tux: "奶牛",
-  coat_void: "黑猫",
-  sound_on: "声音开",
-  sound_off: "声音关",
-  title_asleep: "呼…… {name}睡着了",
-  share_purr_name: "🐈 我是{name}的铲屎官。来撸{name}（小心肚皮）：",
+  share: "分享",
+  more: "更多",
+  about: "玩法说明",
+  more_games: "更多游戏 · games.integ.life →",
 }
-
-const es: Messages = {
-  name_charge: 'Carga Explosiva',
-  name_void: 'Agujero Negro',
-  name_smash: 'Rompe el Cristal',
-  name_pop: 'Burbujas en Cadena',
-  more_games: 'Más juegos · games.integ.life →',
-  about: 'Cómo jugar',
-  share: 'Compartir',
-  copy_link: 'Copiar enlace',
-  copied: '¡Enlace copiado!',
-  scan: 'Escanea para abrirlo en el móvil o compartirlo en WeChat',
-  share_heading: 'Compartir con amigos',
+const es: typeof en = {
+  name_charge: "Carga Explosiva",
+  name_void: "Agujero Negro",
+  name_smash: "Rompe el Cristal",
+  name_pop: "Burbujas en Cadena",
   name_knock: "Toca Madera",
+  name_purr: "Gato Mimoso",
   name_squish: "Bollito Blandito",
   name_scratch: "Rasca y Verás",
   name_peel: "Quita el Plástico",
-  name_purr: 'Gato Mimoso',
-  desc_purr: 'Un gato adormilado sobre una manta. Acaríciale el pelo y se arrima, parpadea despacio y ronronea, con sonido y, en Android, un ronroneo que se siente. La barriga es una trampa. Un juguete acogedor, sin registro.',
-  hint_purr: 'Acaricia al gato · toca para el sonido',
-  hint_purr_m: 'Mantén pulsado y arrastra para acariciar',
-  share_purr: '🐈 Acaricia un gato que ronronea en tu pantalla. Cuidado con la barriga:',
-  share_purr_stat: '🐈 He hecho ronronear al gato {n} s. Te toca:',
-  cat_ok: "Aceptable.",
-  cat_left: "Un poco a la izquierda.",
-  cat_there: "Sí. Ahí. No pares.",
-  cat_continue: "Puedes continuar, humano.",
-  cat_tail: "La cola no entra en el trato.",
-  cat_fridge: "No estoy ronroneando. Es la nevera.",
-  cat_blink: "Eso fue un parpadeo lento. Significa que te tolero.",
-  cat_trap: "Era una trampa. Siempre es una trampa.",
-  cat_granted: "Acceso a la barriga: concedido. No se lo digas a nadie.",
-  cat_warn: "Considéralo una advertencia verbal.",
-  cat_warned: "Ya te avisé.",
-  cat_knead: "Amasando galletas. No molestar.",
-  cat_noted: "Tu desempeño ha quedado registrado.",
-  cat_zzz: "zzz",
-  cat_gravity: "La gravedad sigue funcionando.",
-  cat_smash_chip: "¿Más cristal que romper? smash.integ.life →",
-  cat_boop: "Bup recibido. Archivado como «innecesario».",
-  cat_beans: "Las almohadillas no son de uso público.",
-  cat_belly_no: "Eso no era una invitación.",
-  cat_grain: "Al revés. El pelo tiene dirección.",
-  cat_rough: "Con cuidado. No soy una alfombra.",
-  cat_ears: "Detrás de las orejas. Correcto.",
-  cat_stretch: "Aceptable. Sigue por el lomo.",
-  cat_awake: "No dormía. Descansaba los ojos.",
-  cat_coat_orange: "No es grasa. Es hueso grande.",
-  cat_coat_tux: "Locura certificada.",
-  cat_coat_void: "Soy el vacío. Véase también void.integ.life.",
-  tax_button: "Impuesto gatuno",
-  tax_title: "IMPUESTO GATUNO: PAGADO",
-  tax_cat: "Gato: {name}",
-  tax_pets: "Caricias dadas",
-  tax_purr: "Tiempo de ronroneo",
-  tax_biscuits: "Galletas amasadas",
-  tax_traps: "Trampas en las que caíste",
-  tax_swats: "Zarpazos recibidos",
-  tax_rating: "Valoración del personal",
-  tax_r1: "despedido",
-  tax_r2: "en periodo de prueba",
-  tax_r3: "aceptable",
-  tax_r4: "personal valioso",
-  tax_r5: "empleado del mes",
-  tax_share: "Compartir ticket",
-  tax_save: "Guardar imagen",
-  tax_sec: "{n} s",
-  cat_name_ph: "Nombre de tu gato",
-  cat_coat: "Pelaje",
-  coat_tabby: "Atigrado",
-  coat_orange: "Naranja",
-  coat_tux: "Esmoquin",
-  coat_void: "Negro",
-  sound_on: "Sonido sí",
-  sound_off: "Sonido no",
-  title_asleep: "zzz… {name} duerme",
-  share_purr_name: "🐈 Soy el personal de {name}. Ven a acariciar a {name} (cuidado con la barriga):",
+  share: "Compartir",
+  more: "Más",
+  about: "Cómo jugar",
+  more_games: "Más juegos · games.integ.life →",
 }
-
-const fr: Messages = {
-  name_charge: 'Charge Explosive',
-  name_void: 'Trou Noir',
-  name_smash: 'Casse la Vitre',
-  name_pop: 'Bulles en Chaîne',
-  more_games: 'Plus de jeux · games.integ.life →',
-  about: 'Comment jouer',
-  share: 'Partager',
-  copy_link: 'Copier le lien',
-  copied: 'Lien copié !',
-  scan: 'Scanne pour l’ouvrir sur ton téléphone ou le partager sur WeChat',
-  share_heading: 'Partager avec des amis',
+const fr: typeof en = {
+  name_charge: "Charge Explosive",
+  name_void: "Trou Noir",
+  name_smash: "Casse la Vitre",
+  name_pop: "Bulles en Chaîne",
   name_knock: "Touche du Bois",
+  name_purr: "Chat Câlin",
   name_squish: "Petit Mochi Tout Mou",
   name_scratch: "Grattez Voir",
   name_peel: "Pelez-Moi Ça",
-  name_purr: 'Chat Câlin',
-  desc_purr: 'Un chat somnolent sur une couverture. Caresse son pelage : il se blottit, cligne lentement des yeux et ronronne, avec le son et, sur Android, un ronron qu’on sent. Le ventre est un piège. Un petit jouet douillet, sans inscription.',
-  hint_purr: 'Caresse le chat · touche pour le son',
-  hint_purr_m: 'Maintiens et glisse pour caresser',
-  share_purr: '🐈 Caresse un chat qui ronronne sur ton écran. Attention au ventre :',
-  share_purr_stat: '🐈 J’ai fait ronronner le chat {n} s. À toi :',
-  cat_ok: "Acceptable.",
-  cat_left: "Un peu à gauche.",
-  cat_there: "Oui. Là. Ne t’arrête pas.",
-  cat_continue: "Tu peux continuer, humain.",
-  cat_tail: "La queue ne fait pas partie du contrat.",
-  cat_fridge: "Je ne ronronne pas. C’est le frigo.",
-  cat_blink: "C’était un clignement lent. Ça veut dire que je te tolère.",
-  cat_trap: "C’était un piège. C’est toujours un piège.",
-  cat_granted: "Accès au ventre : accordé. N’en parle à personne.",
-  cat_warn: "Considère ça comme un avertissement verbal.",
-  cat_warned: "Je t’avais prévenu.",
-  cat_knead: "Je pétris. Ne pas déranger.",
-  cat_noted: "Ta performance a été notée.",
-  cat_zzz: "zzz",
-  cat_gravity: "La gravité fonctionne toujours.",
-  cat_smash_chip: "Encore du verre à casser ? smash.integ.life →",
-  cat_boop: "Boop reçu. Classé « inutile ».",
-  cat_beans: "Les coussinets ne sont pas en libre-service.",
-  cat_belly_no: "Ce n’était pas une invitation.",
-  cat_grain: "À rebrousse-poil. Le poil a un sens.",
-  cat_rough: "Doucement. Je ne suis pas un tapis.",
-  cat_ears: "Derrière les oreilles. Correct.",
-  cat_stretch: "Acceptable. Continue le long du dos.",
-  cat_awake: "Je ne dormais pas. Je reposais mes yeux.",
-  cat_coat_orange: "Pas gros. Juste une ossature lourde.",
-  cat_coat_tux: "Dérangé, certifié.",
-  cat_coat_void: "Je suis le vide. Voir aussi void.integ.life.",
-  tax_button: "Taxe féline",
-  tax_title: "TAXE FÉLINE : PAYÉE",
-  tax_cat: "Chat : {name}",
-  tax_pets: "Caresses données",
-  tax_purr: "Temps de ronron",
-  tax_biscuits: "Biscuits pétris",
-  tax_traps: "Pièges tombés dedans",
-  tax_swats: "Coups de patte reçus",
-  tax_rating: "Note du personnel",
-  tax_r1: "renvoyé",
-  tax_r2: "en période d’essai",
-  tax_r3: "correct",
-  tax_r4: "personnel précieux",
-  tax_r5: "employé du mois",
-  tax_share: "Partager le ticket",
-  tax_save: "Enregistrer l’image",
-  tax_sec: "{n} s",
-  cat_name_ph: "Nom de ton chat",
-  cat_coat: "Robe",
-  coat_tabby: "Tigré",
-  coat_orange: "Roux",
-  coat_tux: "Smoking",
-  coat_void: "Noir",
-  sound_on: "Son activé",
-  sound_off: "Son coupé",
-  title_asleep: "zzz… {name} dort",
-  share_purr_name: "🐈 Je suis le personnel de {name}. Viens caresser {name} (attention au ventre) :",
+  share: "Partager",
+  more: "Plus",
+  about: "Comment jouer",
+  more_games: "Plus de jeux · games.integ.life →",
 }
-
-
-
-
-
-const ja: Messages = {
-  name_charge: 'チャージバースト',
-  name_void: 'ブラックホール',
-  name_smash: 'ガラス粉砕',
-  name_pop: '連鎖バブル',
-  more_games: 'その他のゲーム · games.integ.life →',
-  about: '遊び方',
-  share: 'シェア',
-  copy_link: 'リンクをコピー',
-  copied: 'コピーしました！',
-  scan: 'スマホで読み取って開く／WeChat でシェア',
-  share_heading: '友だちにシェア',
+const ja: typeof en = {
+  name_charge: "チャージバースト",
+  name_void: "ブラックホール",
+  name_smash: "ガラス粉砕",
+  name_pop: "連鎖バブル",
   name_knock: "電子木魚 ぽくぽく",
+  name_purr: "なでなで猫",
   name_squish: "もちもちにぎにぎ",
   name_scratch: "けずってスクラッチ",
   name_peel: "ペリペリ保護フィルム",
-  name_purr: 'なでなで猫',
-  desc_purr: '毛布の上の眠そうな猫。毛並みをなでると寄りかかってきて、ゆっくりまばたきしてゴロゴロ。Android では指でゴロゴロを感じられます。お腹は罠。登録不要のほっこりおもちゃ。',
-  hint_purr: '猫をなでる · タップで音',
-  hint_purr_m: '押したままドラッグでなでる',
-  share_purr: '🐈 画面の中のゴロゴロ猫をなでよう。お腹に注意：',
-  share_purr_stat: '🐈 猫を {n} 秒ゴロゴロさせた。次はあなた：',
-  cat_ok: "まあ、よろしい。",
-  cat_left: "もう少し左。",
-  cat_there: "そう、そこ。やめないで。",
-  cat_continue: "人間よ、続けてよい。",
-  cat_tail: "しっぽは契約外です。",
-  cat_fridge: "ゴロゴロしてない。冷蔵庫の音だ。",
-  cat_blink: "今のはゆっくりまばたき。許してやる、という意味。",
-  cat_trap: "罠だった。いつだって罠だ。",
-  cat_granted: "お腹、解禁。誰にも言うな。",
-  cat_warn: "これは口頭注意です。",
-  cat_warned: "警告はした。",
-  cat_knead: "ふみふみ中。邪魔しないで。",
-  cat_noted: "あなたの働きは記録された。",
-  cat_zzz: "すぴー…",
-  cat_gravity: "重力は今日も正常。",
-  cat_smash_chip: "もっと割りたい？ smash.integ.life →",
-  cat_boop: "鼻ツン受理。「不要」に分類。",
-  cat_beans: "肉球は非公開です。",
-  cat_belly_no: "今のは招待ではない。",
-  cat_grain: "逆なで。毛には向きがある。",
-  cat_rough: "優しく。カーペットではない。",
-  cat_ears: "耳の後ろ。正解。",
-  cat_stretch: "よろしい。背中に沿って続けて。",
-  cat_awake: "寝てない。目を休めていただけ。",
-  cat_coat_orange: "太ってない。骨太なだけ。",
-  cat_coat_tux: "公認の情緒不安定。",
-  cat_coat_void: "我は虚無。void.integ.life もどうぞ。",
-  tax_button: "猫税",
-  tax_title: "猫税：納付済み",
-  tax_cat: "猫：{name}",
-  tax_pets: "なでた回数",
-  tax_purr: "ゴロゴロ時間",
-  tax_biscuits: "ふみふみ回数",
-  tax_traps: "罠にかかった回数",
-  tax_swats: "猫パンチされた回数",
-  tax_rating: "下僕評価",
-  tax_r1: "クビ",
-  tax_r2: "試用期間",
-  tax_r3: "まあまあ",
-  tax_r4: "優秀な下僕",
-  tax_r5: "今月の最優秀下僕",
-  tax_share: "レシートを共有",
-  tax_save: "画像を保存",
-  tax_sec: "{n} 秒",
-  cat_name_ph: "猫の名前",
-  cat_coat: "毛色",
-  coat_tabby: "キジトラ",
-  coat_orange: "茶トラ",
-  coat_tux: "ハチワレ",
-  coat_void: "黒猫",
-  sound_on: "音オン",
-  sound_off: "音オフ",
-  title_asleep: "すぴー… {name}はおやすみ中",
-  share_purr_name: "🐈 {name}の下僕です。{name}をなでに来て（お腹に注意）：",
+  share: "シェア",
+  more: "もっと",
+  about: "遊び方",
+  more_games: "その他のゲーム · games.integ.life →",
 }
 
-
-const TABLE: Record<Locale, Messages> = { en, 'zh-CN': zhCN, es, fr, ja }
+type Core = typeof en
+export type Messages = Core & (typeof TOY)['en']
+const CORE: Record<Locale, Core> = { en, 'zh-CN': zhCN, es, fr, ja }
 
 function match(raw: string | null | undefined): Locale | null {
   if (!raw) return null
@@ -428,31 +116,43 @@ function detect(): Locale {
 }
 
 export const locale: Locale = detect()
-const M = TABLE[locale]
+const M = { ...CORE[locale], ...TOY[locale] } as Messages
 
-export type Key = StringKey
 type StringKey = { [K in keyof Messages]: Messages[K] extends string ? K : never }[keyof Messages]
+type ListKey = { [K in keyof Messages]: Messages[K] extends readonly string[] ? K : never }[keyof Messages]
+export type Key = StringKey
+
+const fill = (s: string, vars: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''))
 
 export function t(key: StringKey, vars: Record<string, string | number> = {}): string {
-  return M[key].replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''))
+  return fill(M[key] as string, vars)
 }
 
+/** Text by a computed key (shared code asking for `share_${toy}` and the like); '' if this toy has none. */
+export function tx(key: string, vars: Record<string, string | number> = {}): string {
+  const v = (M as Record<string, unknown>)[key]
+  return typeof v === 'string' ? fill(v, vars) : ''
+}
+
+/** A list of lines (smash's default words, knock's variants, charge's pfft lines …). */
+export const list = (key: ListKey): readonly string[] => M[key] as readonly string[]
 
 /** Localised <html lang>, <title> and description for the current toy. */
 export function applyMeta(toy: ToyId) {
   document.documentElement.lang = locale
-  const name = M[`name_${toy}`]
-  document.title = locale === 'en' ? `${name} · integ.life` : `${name} · ${en[`name_${toy}`]}`
-  document.querySelector('meta[name="description"]')?.setAttribute('content', M[`desc_${toy}` as 'desc_purr'])
+  const name = tx(`name_${toy}`)
+  const enName = ((en as Record<string, string>)[`name_${toy}`] ?? (TOY.en as Record<string, unknown>)[`name_${toy}`]) as string
+  document.title = locale === 'en' ? `${name} · integ.life` : `${name} · ${enName}`
+  document.querySelector('meta[name="description"]')?.setAttribute('content', tx(`desc_${toy}`))
   const local = document.getElementById('about-local')
   if (local && locale !== 'en') {
     local.replaceChildren()
     const h = document.createElement('h2')
     h.textContent = name
     const p = document.createElement('p')
-    p.textContent = M[`desc_${toy}` as 'desc_purr']
+    p.textContent = tx(`desc_${toy}`)
     const tip = document.createElement('p')
-    tip.textContent = M[`hint_${toy}` as 'hint_purr']
+    tip.textContent = tx(`hint_${toy}`)
     local.append(h, p, tip)
   }
 }
