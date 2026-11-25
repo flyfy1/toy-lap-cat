@@ -20,6 +20,8 @@ export interface Sprite {
   strokes: number
   /** underlay colours at field resolution (to find white fur when shading) */
   under?: ImageData | null
+  /** all passes and the shading are done */
+  finished: boolean
 }
 
 const LIGHT = (() => {
@@ -90,6 +92,8 @@ export interface BakeOpts {
 export class Baker {
   sprites = new Map<PartId, Sprite>()
   private jobs: (() => void)[] = []
+  /** longest single job (ms) and the frames' bake slices, for perf checks */
+  maxJobMs = 0
   totalStrokes = 0
   bakeMs = 0
   startedAt = performance.now()
@@ -99,22 +103,38 @@ export class Baker {
     defs: PartDef[],
     private o: BakeOpts,
   ) {
-    for (const def of defs) {
-      const [x0, y0, x1, y1] = def.bbox
-      const field = new Field(def.path, x0, y0, x1, y1, 56)
-      const bw = x1 - x0
-      const bh = y1 - y0
-      const cv = document.createElement('canvas')
-      cv.width = Math.ceil(bw * o.ppu)
-      cv.height = Math.ceil(bh * o.ppu)
-      const c = cv.getContext('2d')!
-      c.setTransform(o.ppu, 0, 0, o.ppu, -x0 * o.ppu, -y0 * o.ppu)
-      const sp: Sprite = { def, field, cv, c, ppu: o.ppu, x0, y0, bw, bh, strokes: 0 }
-      this.sprites.set(def.id, sp)
-      this.quick(sp)
-      this.queueUnderlay(sp)
-    }
-    if (o.fur) for (const sp of this.sprites.values()) this.queueStrokes(sp)
+    // everything is a job, so no single task is long: per part first a distance field and a cheap
+    // flat-shaded stand-in, then the underlays, then the hair strokes
+    for (const def of defs) this.jobs.push(() => this.init(def))
+    this.jobs.push(() => {
+      for (const sp of this.sprites.values()) this.queueUnderlay(sp)
+      if (o.fur) for (const sp of this.sprites.values()) this.queueStrokes(sp)
+    })
+  }
+
+  get ppu() {
+    return this.o.ppu
+  }
+
+  /** Append work that runs after everything queued so far (e.g. building tufts once the fields exist). */
+  add(job: () => void) {
+    this.jobs.push(job)
+  }
+
+  private init(def: PartDef) {
+    const o = this.o
+    const [x0, y0, x1, y1] = def.bbox
+    const field = new Field(def.path, x0, y0, x1, y1, 56)
+    const bw = x1 - x0
+    const bh = y1 - y0
+    const cv = document.createElement('canvas')
+    cv.width = Math.ceil(bw * o.ppu)
+    cv.height = Math.ceil(bh * o.ppu)
+    const c = cv.getContext('2d')!
+    c.setTransform(o.ppu, 0, 0, o.ppu, -x0 * o.ppu, -y0 * o.ppu)
+    const sp: Sprite = { def, field, cv, c, ppu: o.ppu, x0, y0, bw, bh, strokes: 0, finished: false }
+    this.sprites.set(def.id, sp)
+    this.quick(sp)
   }
 
   /** Frame-1 stand-in: the silhouette in its average coat colour with a soft top-left light. */
@@ -155,7 +175,11 @@ export class Baker {
   step(budget = 12) {
     if (!this.jobs.length) return
     const t0 = performance.now()
-    while (this.jobs.length && performance.now() - t0 < budget) this.jobs.shift()!()
+    while (this.jobs.length && performance.now() - t0 < budget) {
+      const a = performance.now()
+      this.jobs.shift()!()
+      this.maxJobMs = Math.max(this.maxJobMs, performance.now() - a)
+    }
     this.bakeMs += performance.now() - t0
     if (!this.jobs.length) this.doneAt = performance.now()
   }
@@ -219,6 +243,7 @@ export class Baker {
       // inner ear: pink cup drawn as part of the underlay (no fur over it, tufts added later)
       if (def.noFur && (def.id === 'earL' || def.id === 'earR')) this.innerEar(sp)
       c.restore()
+      if (!this.o.fur) sp.finished = true
     })
   }
 
@@ -373,6 +398,7 @@ export class Baker {
       c.restore()
     }
     if (def.id === 'earL' || def.id === 'earR') this.earTufts(sp)
+    sp.finished = true
   }
 
   /** Long pale tufts growing out of the inner ear. */

@@ -27,13 +27,16 @@ const STROKE_T = 2.7
 export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameApi {
   const q = new URLSearchParams(location.search)
   const pose = q.get('pose') ?? 'rest'
-  const freezeAt = q.has('t') ? Math.max(0, parseFloat(q.get('t') || '0') || 0) : null
+
   const seed = Math.max(1, parseInt(q.get('seed') || '1', 10) || 1)
   const fur = q.get('fur') !== '0'
   const showStats = q.get('stats') === '1'
   const purrMode = q.get('purr') === 'rec' ? 'rec' : 'synth'
   const stroke = q.get('stroke') === '1'
+  // ?t may be negative with ?stroke=1 (the canned stroke runs from -STROKE_T to 0)
+  const freezeAt = q.has('t') ? Math.max(stroke ? -STROKE_T : 0, parseFloat(q.get('t') || '0') || 0) : null
 
+  const tStart = performance.now()
   const ctx = canvas.getContext('2d', { alpha: false })!
   const cat = new Cat({ seed, fur })
   let w = 0
@@ -51,6 +54,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     cat.layout(w, h, dpr, keepBake)
   }
   resize()
+  const tLayout = performance.now() - tStart
   const onResize = () => resize()
   window.addEventListener('resize', onResize)
   const noMenu = (e: Event) => e.preventDefault()
@@ -58,6 +62,9 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   canvas.style.cursor = 'none'
 
   const dbg: Record<string, unknown> = { ready: false, pose, frozen: freezeAt !== null, tufts: cat.tuftCount, cat, audio }
+  // rest-pose geometry for test harnesses (head centre and rotation in cat space)
+  dbg.geo = { hc: HEAD_C, hr: HEAD_ROT }
+  dbg.startGame = [Math.round(tStart), Math.round(tLayout)]
   ;(window as W).__cat = dbg
 
   // ---------- scripted fingers (poses and the canned stroke) ----------
@@ -203,6 +210,9 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   let fps = 60
   let workMs = 0
   const frames: number[] = []
+  /** frames whose work exceeded 30 ms: [start, bake ms, rest ms] */
+  const slow: number[][] = []
+  dbg.slow = slow
   let lastNow = performance.now()
   let calmSince = 0
   const calm: number[] = []
@@ -265,7 +275,8 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (frames.length > 600) frames.shift()
     fps = fps * 0.9 + (1000 / Math.max(1, delta)) * 0.1
     const a = performance.now()
-    cat.baker.step(started ? 6 : 14)
+    cat.baker.step(started ? 4 : 8)
+    const bakeSlice = performance.now() - a
     if (freezeAt !== null) {
       if (!frozen) {
         // fast-forward deterministically in fixed steps, then hold
@@ -276,7 +287,10 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     } else step(dtRaw, now)
     cat.draw(ctx, true)
     if (!reactionPending) ensureVoices()
-    workMs = workMs * 0.9 + (performance.now() - a) * 0.1
+    const work = performance.now() - a
+    workMs = workMs * 0.9 + work * 0.1
+    if (work > 30) slow.push([Math.round(a), Math.round(bakeSlice), Math.round(work - bakeSlice)])
+    if (slow.length > 50) slow.shift()
     if (reactionPending) {
       reactionPending = false
       dbg.firstReactionMs = performance.now() - firstEvt
@@ -322,11 +336,16 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (cat.baker.done && dbg.prepareAt === undefined) {
       // create the (suspended) audio context once the bake is done, so the first touch only resumes it
       dbg.prepareAt = 0
-      setTimeout(() => {
+      // (the first AudioContext in a browser process costs a one-off native audio-device init that
+      // cannot be split; do it in idle time, never inside the first touch)
+      const prep = () => {
         const a = performance.now()
         audio.prepare()
-        dbg.prepareAt = [Math.round(a), Math.round(performance.now() - a)]
-      }, 30)
+        dbg.prepareAt = [Math.round(a), Math.round(performance.now() - a), audio.buildMs]
+      }
+      const ric = (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+      if (ric) ric(prep, { timeout: 1000 })
+      else setTimeout(prep, 30)
     }
     dbg.timings = cat.timings
     if (cat.baker.done && !dbg.ready) {
@@ -334,6 +353,8 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       dbg.bakeMs = cat.baker.bakeMs
       dbg.bakeDoneMs = cat.baker.doneAt
       dbg.strokes = cat.baker.totalStrokes
+      dbg.maxJobMs = cat.baker.maxJobMs
+      dbg.tufts = cat.tuftCount
     }
     dbg.fps = fps
     dbg.matchMs = cat.matchMs

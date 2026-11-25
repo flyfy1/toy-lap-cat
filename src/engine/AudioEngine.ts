@@ -69,6 +69,8 @@ class AudioEngine {
   private master: GainNode | null = null
   private noiseBuf: AudioBuffer | null = null
   private recent: number[] = []
+  /** [context creation, noise fill] ms of the last build */
+  buildMs: number[] = []
 
   /** Create the (suspended) context ahead of time, so the first touch only has to resume it. */
   prepare(): void {
@@ -91,7 +93,9 @@ class AudioEngine {
     {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       if (!AC) return
+      const t0 = performance.now()
       const ctx = new AC()
+      const t1 = performance.now()
       const comp = ctx.createDynamicsCompressor()
       comp.threshold.value = -14
       comp.knee.value = 12
@@ -105,6 +109,7 @@ class AudioEngine {
       const buf = ctx.createBuffer(1, len, ctx.sampleRate)
       const d = buf.getChannelData(0)
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+      this.buildMs = [t1 - t0, performance.now() - t1]
       this.ctx = ctx
       this.master = master
       this.noiseBuf = buf

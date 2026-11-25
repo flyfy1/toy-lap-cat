@@ -97,6 +97,9 @@ export class Cat {
   pupil: [number, number] = [0, 0]
   finger: { x: number; y: number; on: boolean } = { x: 0, y: 0, on: false }
   onSlowBlink?: () => void
+  onTufts?: () => void
+  /** one tuft colour match (a sprite readback) per frame at most */
+  private matchedThisFrame = false
 
   constructor(private o: CatOpts) {
     this.defs = buildRig({ seed: o.seed })
@@ -125,7 +128,8 @@ export class Cat {
     if (changed) {
       const ppu = Math.min(HW * dpr, 400)
       tm('baker', () => (this.baker = new Baker(this.defs, { ppu, seed: this.o.seed, fur: this.o.fur })))
-      if (!this.grooms.size) tm('tufts', () => this.buildTufts())
+      // tufts need the parts' distance fields: built as bake jobs, one part per job
+      if (!this.grooms.size) for (const id of TUFT_PARTS) this.baker.add(() => this.buildTufts(id))
       else for (const l of this.layers.values()) l.matched = false
       tm('headShadow', () => this.buildHeadShadow())
     }
@@ -135,8 +139,11 @@ export class Cat {
   private sprite(id: PartId): Sprite {
     return this.baker.sprites.get(id)!
   }
+  private has(id: PartId) {
+    return this.baker.sprites.has(id)
+  }
 
-  private buildTufts() {
+  private buildTufts(id: PartId) {
     const fieldOf = (id: PartId) => this.sprite(id).field
     const covers = (ids: PartId[]) => (x: number, y: number) =>
       ids.some((id) => {
@@ -144,7 +151,7 @@ export class Cat {
         const [lx, ly] = apply(inv(def.toCat), x, y)
         return fieldOf(id).sample(lx, ly) > 0.03
       })
-    for (const id of TUFT_PARTS) {
+    {
       const def = this.defs.find((d) => d.id === id)!
       const [x0, y0, x1, y1] = def.bbox
       const g = new Groom(def, x0, y0, x1, y1)
@@ -165,11 +172,12 @@ export class Cat {
       this.layers.set(id, layer)
     }
     this.tuftCount = [...this.layers.values()].reduce((a, l) => a + l.tufts.length, 0)
+    this.onTufts?.()
   }
 
   private buildHeadShadow() {
     const def = this.defs.find((d) => d.id === 'head')!
-    const ppu = Math.max(20, this.baker.sprites.get('head')!.ppu * 0.35)
+    const ppu = Math.max(20, this.baker.ppu * 0.35)
     const pad = 0.3
     const [x0, y0, x1, y1] = def.bbox
     const cv = document.createElement('canvas')
@@ -465,6 +473,7 @@ export class Cat {
   hit(x: number, y: number): { id: PartId; lx: number; ly: number } | null {
     const [cx, cy] = this.toCat(x, y)
     for (const id of HIT_ORDER) {
+      if (!this.has(id)) continue
       const m = this.partM(id)
       const [lx, ly] = apply(inv(m), cx, cy)
       const d = this.sprite(id).field.sample(lx, ly)
@@ -705,7 +714,9 @@ export class Cat {
     const unit = this.dpr * this.HW
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     if (this.blanket) ctx.drawImage(this.blanket, 0, 0)
+    this.matchedThisFrame = false
     const sprite = (id: PartId) => {
+      if (!this.has(id)) return null
       const sp = this.sprite(id)
       const m = mul(dev, this.partM(id))
       ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5])
@@ -715,7 +726,9 @@ export class Cat {
     const tufts = (id: PartId, m: Mat) => {
       const layer = this.layers.get(id)
       if (!layer || !this.o.fur) return
-      if (!layer.matched && this.baker.done) {
+      if (!layer.matched) {
+        if (!this.baker.done || this.matchedThisFrame) return
+        this.matchedThisFrame = true
         const a = performance.now()
         layer.matchSprite(this.sprite(id))
         this.matchMs += performance.now() - a
@@ -738,7 +751,7 @@ export class Cat {
     for (const d of this.defs) {
       if (d.id === 'earL' || d.id === 'earR' || d.id === 'head') continue
       const m = sprite(d.id)
-      if (TUFT_PARTS.includes(d.id)) timed(d.id, m)
+      if (m && TUFT_PARTS.includes(d.id)) timed(d.id, m)
     }
     // head casts a soft shadow onto the body
     if (this.headShadow) {
@@ -753,6 +766,7 @@ export class Cat {
     sprite('earL')
     sprite('earR')
     const hm = sprite('head')
+    if (!hm) return
     timed('head', hm)
     ctx.setTransform(hm[0], hm[1], hm[2], hm[3], hm[4], hm[5])
     const px = 1 / this.HW
