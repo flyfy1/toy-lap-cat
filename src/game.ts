@@ -8,6 +8,7 @@ import { Cat, type CatEvent, type Touch } from './cat/cat'
 import { COAT } from './cat/palette'
 import { HEAD_C, HEAD_ROT, apply, mul, rot, spine, tr } from './cat/rig'
 import type { Key } from './i18n'
+import type { Hand } from './hand'
 
 /** Counters for the cat-tax receipt (this session). */
 export interface CatStats {
@@ -67,7 +68,9 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
 
   const seed = Math.max(1, parseInt(q.get('seed') || '1', 10) || 1)
   const fur = q.get('fur') !== '0'
-  const showStats = q.get('stats') === '1'
+  // ?stats=1: the perf overlay (a lazy debug chunk)
+  let dbgDraw: typeof import('./cat/debug').drawStats | null = null
+  if (q.get('stats') === '1') import('./cat/debug').then((m) => (dbgDraw = m.drawStats))
   const purrMode = q.get('purr') === 'rec' ? 'rec' : 'synth'
   const stroke = q.get('stroke') === '1'
   // ?t may be negative with ?stroke=1 (the canned stroke runs from -STROKE_T to 0)
@@ -76,7 +79,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   const tStart = performance.now()
   const ctx = canvas.getContext('2d', { alpha: false })!
   const cat = new Cat({ seed, fur })
-  cat.bones = q.get('bones') === '1'
+  if (q.get('bones') === '1') import('./cat/debug').then((m) => (cat.bones = m.drawBones))
   cat.noTufts = q.get('tufts') === '0'
   let w = 0
   let h = 0
@@ -98,7 +101,20 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   window.addEventListener('resize', onResize)
   const noMenu = (e: Event) => e.preventDefault()
   canvas.addEventListener('contextmenu', noMenu)
-  canvas.style.cursor = 'none'
+  // the mouse hand (lazy): the real cursor is hidden only while the hand is drawn; reduced motion keeps a static grab cursor
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+  let hand: Hand | null = null
+  let handReq = false
+  const loadHand = () => {
+    if (handReq || still || og) return
+    handReq = true
+    import('./hand').then((m) => (hand = new m.Hand()), () => {})
+  }
+  if (matchMedia('(pointer: fine)').matches) loadHand()
+  let cursor = ''
+  const setCursor = (c: string) => {
+    if (c !== cursor) canvas.style.cursor = cursor = c
+  }
 
   const dbg: Record<string, unknown> = { ready: false, pose, frozen: freezeAt !== null, tufts: cat.tuftCount, cat, audio }
   // rest-pose geometry for test harnesses (head centre and rotation in cat space)
@@ -261,6 +277,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
     canvas.setPointerCapture?.(e.pointerId)
     if (ptrs.size >= 2 && !ptrs.has(e.pointerId)) return
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, vx: 0, vy: 0, t: e.timeStamp, type: e.pointerType, down: true })
+    if (e.pointerType !== 'touch') loadHand()
     markFirst(e)
   }
   const onMove = (e: PointerEvent) => {
@@ -278,7 +295,9 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
     p.x = e.clientX
     p.y = e.clientY
     p.t = e.timeStamp
-    markFirst(e)
+    // a mouse pets only while its button is held; with the button up the hand hovers
+    if (p.down) markFirst(e)
+    else loadHand()
   }
   const onUp = (e: PointerEvent) => {
     const p = ptrs.get(e.pointerId)
@@ -501,8 +520,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         p.vy *= 0.5
       }
       pointer = { x: p.x, y: p.y }
-      // a mouse pets by hovering, but only while it moves; a parked cursor is not petting
-      if (p.down || (p.type !== 'touch' && nowMs - p.t < 400)) {
+      if (p.down) {
         touches.push({ x: p.x, y: p.y, vx: p.vx, vy: p.vy })
         if (cat.hit(p.x, p.y)) {
           maxSpeed = Math.max(maxSpeed, Math.hypot(p.vx, p.vy))
@@ -558,7 +576,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
 
   let sleepAcc = 0
   const frame = (dtRaw: number) => {
-    if (cat.asleep && freezeAt === null && cat.baker.done && ![...ptrs.values()].some((p) => p.down)) {
+    // (a mouse hand over the canvas keeps the full frame rate)
+    if (cat.asleep && freezeAt === null && cat.baker.done && ![...ptrs.values()].some((p) => p.down || p.type !== 'touch')) {
       // asleep: 20 fps is plenty for breathing and the drifting z
       sleepAcc += dtRaw
       if (sleepAcc < 0.05) return
@@ -586,7 +605,11 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
       step(dtRaw / 2, now)
       step(dtRaw / 2, now)
     } else step(dtRaw, now)
-    cat.draw(ctx, true)
+    let mouse: Ptr | null = null
+    for (const p of ptrs.values()) if (p.type !== 'touch') mouse = p
+    cat.draw(ctx, !(hand && mouse))
+    if (hand && mouse) dbg.hand = hand.frame(ctx, dpr, cat, mouse, delta / 1000)
+    setCursor(hand && mouse ? 'none' : still ? (mouse?.down ? 'grabbing' : 'grab') : '')
     if (!reactionPending) ensureVoices()
     const work = performance.now() - a
     workMs = workMs * 0.9 + work * 0.1
@@ -620,17 +643,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         }
       }
     }
-    if (showStats) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.fillStyle = 'rgba(40,30,20,0.6)'
-      ctx.fillRect(6, 6, 190, 74)
-      ctx.fillStyle = '#fff'
-      ctx.font = '11px ui-monospace, monospace'
-      ctx.fillText(`fps ${fps.toFixed(0)}  frame ${workMs.toFixed(1)} ms`, 12, 22)
-      ctx.fillText(`tufts ${cat.tuftCount}${cat.half ? ' (half)' : ''}  ${cat.tuftMs.toFixed(2)} ms`, 12, 36)
-      ctx.fillText(`bake ${cat.baker.bakeMs.toFixed(0)} ms  ${cat.baker.totalStrokes} strokes`, 12, 50)
-      ctx.fillText(`bliss ${cat.bliss.toFixed(2)}  zone ${cat.zone}  dpr ${dpr}`, 12, 64)
-    }
+    dbgDraw?.(ctx, dpr, cat, fps, workMs)
     if (!dbg.firstPaintMs) {
       dbg.firstPaintMs = performance.now()
     }
