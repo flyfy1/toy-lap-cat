@@ -203,7 +203,7 @@ export class Cat {
     const rw = Math.min(w * 1.02, HW * 3.8)
     // stays clear of the hint line at the bottom
     const y0 = Math.max(h * 0.02, this.oy - HW * 1.42)
-    const y1 = Math.min(h - 74, this.oy + HW * 1.78)
+    const y1 = Math.min(h - 100, this.oy + HW * 1.78)
     return { x0: cx - rw / 2, x1: cx + rw / 2, y0, y1 }
   }
 

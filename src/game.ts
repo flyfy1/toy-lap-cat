@@ -337,15 +337,14 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       // create the (suspended) audio context once the bake is done, so the first touch only resumes it
       dbg.prepareAt = 0
       // (the first AudioContext in a browser process costs a one-off native audio-device init that
-      // cannot be split; do it in idle time, never inside the first touch)
+      // cannot be split; do it right after the bake, so a first touch rarely has to pay it.
+      // requestIdleCallback is no good here: with a running rAF loop it only fires on its timeout)
       const prep = () => {
         const a = performance.now()
         audio.prepare()
         dbg.prepareAt = [Math.round(a), Math.round(performance.now() - a), audio.buildMs]
       }
-      const ric = (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback
-      if (ric) ric(prep, { timeout: 1000 })
-      else setTimeout(prep, 30)
+      setTimeout(prep, 30)
     }
     dbg.timings = cat.timings
     if (cat.baker.done && !dbg.ready) {
