@@ -4,7 +4,7 @@ import { Baker, type Sprite } from './bake'
 import { drawFace, drawWhiskers, restFace, type FaceState } from './face'
 import { mulberry32, smoothstep, type Rng } from './noise'
 import { P, css } from './palette'
-import { D2R, EAR, EYE, HEAD_C, HEAD_ROT, type Mat, type PartDef, type PartId, TAIL_JOINT, apply, buildRig, catSilhouette, inv, mul, rot, scl, tailCurve, tr } from './rig'
+import { D2R, EAR, EXTENT, EYE, HEAD_C, HEAD_ROT, type Mat, type PartDef, type PartId, TAIL_JOINT, apply, buildRig, catSilhouette, inv, mul, rot, scl, tailCurve, tr } from './rig'
 import { Groom, TuftLayer } from './tufts'
 
 export type Zone = 'chin' | 'cheek' | 'top' | 'nose' | 'body' | 'none'
@@ -38,8 +38,11 @@ export interface CatOpts {
   fur: boolean
 }
 
+/** resting eye openness: sleepy-content, upper lid about 45 % down */
+const REST_LID = 0.5
+
 const TUFT_PARTS: PartId[] = ['head', 'torso', 'thigh']
-const HIT_ORDER: PartId[] = ['head', 'earL', 'earR', 'legNear', 'chest', 'legFar', 'footNear', 'thigh', 'torso', 'footFar', 'tailB', 'tailA']
+const HIT_ORDER: PartId[] = ['head', 'earL', 'earR', 'legNear', 'chest', 'legFar', 'tailB', 'footNear', 'thigh', 'torso', 'tailA']
 
 export class Cat {
   defs: PartDef[]
@@ -73,7 +76,11 @@ export class Cat {
   earFold = [new Spring(0, 300, 13), new Spring(0, 300, 13)]
   earTurn = [new Spring(0, 80, 18), new Spring(0, 80, 18)]
   squint = [new Spring(0, 160, 25), new Spring(0, 160, 25)]
-  lidBase = new Spring(0.96, 120, 22)
+  lidBase = new Spring(REST_LID, 60, 14)
+  /** seconds since the cat noticed the finger (-1: not noticing) */
+  noticeT = -1
+  ptrSeenAt = -99
+  restSlowAt = 7
   slideX = new Spring(0, 120, 14)
   slideY = new Spring(0, 120, 14)
   breath = 0 // 0..1 phase
@@ -101,9 +108,12 @@ export class Cat {
   /** Recompute layout; rebakes sprites when the scale changes. */
   timings: Record<string, number> = {}
   layout(w: number, h: number, dpr: number, keepBake = false) {
-    const HW = Math.min(w / 3.55, h / 3.4)
-    this.ox = w / 2 + HW * 0.1
-    this.oy = h * 0.47
+    // fit the whole cat (with whiskers) to ~96 % of the width, centred at 45 % of the height
+    const ew = EXTENT.x1 - EXTENT.x0
+    const eh = EXTENT.y1 - EXTENT.y0
+    const HW = Math.min((w * 0.96) / ew, (h * 0.56) / eh)
+    this.ox = w / 2 - HW * ((EXTENT.x0 + EXTENT.x1) / 2)
+    this.oy = h * 0.45 - HW * ((EXTENT.y0 + EXTENT.y1) / 2)
     const changed = !this.baker || (!keepBake && Math.abs(HW * dpr - this.HW * this.dpr) > 1) || Math.abs(HW - this.HW) > 1
     this.HW = HW
     this.dpr = dpr
@@ -149,8 +159,8 @@ export class Cat {
               return Math.abs(x) < 0.09 && y > 0.14 && y < 0.31
             }
           : id === 'torso'
-            ? covers(['head', 'legNear', 'legFar', 'chest', 'thigh', 'footNear'])
-            : covers(['footNear'])
+            ? covers(['head', 'legNear', 'legFar', 'chest', 'thigh', 'footNear', 'tailB'])
+            : covers(['footNear', 'tailB'])
       const layer = new TuftLayer(def, fieldOf(id), g, this.o.seed * 31 + id.length, exclude)
       this.layers.set(id, layer)
     }
@@ -178,72 +188,206 @@ export class Cat {
     this.headShadow = cv
   }
 
+  /** Rug rectangle in css px: a rounded knit patch under the cat, extending a little more in front. */
+  rugRect(w: number, h: number) {
+    const HW = this.HW
+    const cx = this.ox + HW * -0.12
+    const rw = Math.min(w * 1.02, HW * 3.8)
+    // stays clear of the hint line at the bottom
+    const y0 = Math.max(h * 0.02, this.oy - HW * 1.42)
+    const y1 = Math.min(h - 74, this.oy + HW * 1.78)
+    return { x0: cx - rw / 2, x1: cx + rw / 2, y0, y1 }
+  }
+
   private buildBlanket(w: number, h: number, dpr: number) {
     const cv = document.createElement('canvas')
     cv.width = Math.round(w * dpr)
     cv.height = Math.round(h * dpr)
     const c = cv.getContext('2d')!
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // the surface: a warm linen sofa
     c.fillStyle = css(P.blanket)
     c.fillRect(0, 0, w, h)
-    // soft top-left light
     const lg = c.createLinearGradient(0, 0, w, h)
     lg.addColorStop(0, 'rgba(250,242,230,0.55)')
     lg.addColorStop(0.5, 'rgba(250,242,230,0)')
     lg.addColorStop(1, 'rgba(120,90,60,0.12)')
     c.fillStyle = lg
     c.fillRect(0, 0, w, h)
-    // knitted rows: columns of small V stitches (10 px pitch)
-    const pitch = 10
-    const sw = pitch * 0.5
-    const n = mulberry32(5)
-    for (let pass = 0; pass < 2; pass++) {
-      c.strokeStyle = pass === 0 ? css(P.stitch, 0.55) : css(P.blanketHi, 0.7)
-      c.lineWidth = pass === 0 ? 1.6 : 1.1
-      c.lineCap = 'round'
-      c.beginPath()
-      const oy = pass === 0 ? 0.8 : -0.4
-      for (let y = -pitch; y < h + pitch; y += pitch * 0.72) {
-        for (let x = -pitch; x < w + pitch; x += pitch) {
-          const jx = (n() - 0.5) * 0.6
-          const jy = (n() - 0.5) * 0.6
-          const cx = x + jx
-          const cy = y + jy + oy
-          c.moveTo(cx - sw * 0.5, cy - sw * 0.45)
-          c.quadraticCurveTo(cx - sw * 0.35, cy + sw * 0.15, cx - 0.4, cy + sw * 0.45)
-          c.moveTo(cx + sw * 0.5, cy - sw * 0.45)
-          c.quadraticCurveTo(cx + sw * 0.35, cy + sw * 0.15, cx + 0.4, cy + sw * 0.45)
-        }
+    {
+      // fine linen weave from a small tile
+      const t = document.createElement('canvas')
+      const ts = 96
+      t.width = ts
+      t.height = ts
+      const tc = t.getContext('2d')!
+      const id = tc.createImageData(ts, ts)
+      const nr = mulberry32(3)
+      for (let i = 0; i < id.data.length; i += 4) {
+        const v = nr()
+        id.data[i] = v < 0.5 ? 110 : 255
+        id.data[i + 1] = v < 0.5 ? 85 : 250
+        id.data[i + 2] = v < 0.5 ? 60 : 240
+        id.data[i + 3] = 255 * 0.05 * Math.abs(v - 0.5) * 2
       }
-      c.globalAlpha = 0.5
-      c.stroke()
-      c.globalAlpha = 1
+      tc.putImageData(id, 0, 0)
+      const pat = c.createPattern(t, 'repeat')!
+      c.save()
+      c.setTransform(1, 0, 0, 1, 0, 0)
+      c.fillStyle = pat
+      c.fillRect(0, 0, cv.width, cv.height)
+      c.restore()
     }
-    // gentle fabric folds
-    const nz = mulberry32(11)
-    for (let k = 0; k < 7; k++) {
-      const x = nz() * w
-      const y = nz() * h
-      const r = (0.3 + nz() * 0.5) * Math.max(w, h)
-      const g = c.createRadialGradient(x, y, 0, x, y, r)
-      const dark = k % 2 === 0
-      g.addColorStop(0, dark ? 'rgba(120,90,60,0.06)' : 'rgba(255,248,236,0.08)')
-      g.addColorStop(1, 'rgba(0,0,0,0)')
-      c.fillStyle = g
-      c.fillRect(0, 0, w, h)
-    }
-    // contact shadow under the cat
+
     const HW = this.HW
+    const r = this.rugRect(w, h)
+    const rugPath = (k = 0) => {
+      // a soft superellipse with a slight hand-made wobble
+      const p = new Path2D()
+      const cx = (r.x0 + r.x1) / 2
+      const cy = (r.y0 + r.y1) / 2
+      const rx = (r.x1 - r.x0) / 2 + k
+      const ry = (r.y1 - r.y0) / 2 + k
+      const N = 160
+      for (let i = 0; i <= N; i++) {
+        const th = (i / N) * Math.PI * 2
+        const ct = Math.cos(th)
+        const st = Math.sin(th)
+        const e = 0.72
+        const wob = 1 + 0.004 * Math.sin(th * 3 + 1.3) + 0.003 * Math.sin(th * 7 + 0.4)
+        let x = rx * wob * Math.sign(ct) * Math.pow(Math.abs(ct), e)
+        let y = ry * wob * Math.sign(st) * Math.pow(Math.abs(st), e)
+        // a touch of perspective (front edge wider) and a slight casual tilt
+        x *= 1 + 0.045 * (y / ry)
+        const tilt = -0.035
+        const xr = x * Math.cos(tilt) - y * Math.sin(tilt)
+        y = x * Math.sin(tilt) + y * Math.cos(tilt)
+        x = cx + xr
+        y = cy + y
+        if (i === 0) p.moveTo(x, y)
+        else p.lineTo(x, y)
+      }
+      p.closePath()
+      return p
+    }
+    // rug drop shadow on the sofa (it has some thickness)
+    c.save()
+    c.shadowColor = css(P.shadow, 0.28)
+    c.shadowBlur = 0.12 * HW * dpr
+    c.shadowOffsetY = 0.04 * HW * dpr
+    c.fillStyle = css(P.rugDark)
+    c.fill(rugPath())
+    c.restore()
+    // knitted stockinette: columns of V stitches, from one shaded stitch tile
+    {
+      const pitch = Math.max(8, 0.085 * HW) * dpr
+      const rowH = pitch * 0.72
+      const t = document.createElement('canvas')
+      t.width = Math.round(pitch)
+      t.height = Math.round(rowH)
+      const tc = t.getContext('2d')!
+      const tw = t.width
+      const th = t.height
+      tc.fillStyle = css(P.rugDark)
+      tc.fillRect(0, 0, tw, th)
+      // each stitch is a V of two slim slanted loops; loops overlap the row below, so draw the
+      // neighbours above and below too and the tile wraps seamlessly
+      for (const dy of [-th, 0, th])
+        for (const side of [-1, 1]) {
+          const lx = tw / 2 + side * tw * 0.2
+          const ly = th * 0.5 + dy
+          const rx = tw * 0.17
+          const ry = th * 0.88
+          const rot = side * 0.5
+          const g = tc.createLinearGradient(lx - side * rx, ly - ry, lx + side * rx, ly + ry)
+          g.addColorStop(0, css(P.rugHi))
+          g.addColorStop(0.5, css(P.rug))
+          g.addColorStop(1, css(P.rugDark, 0.9))
+          tc.fillStyle = g
+          tc.beginPath()
+          tc.ellipse(lx, ly, rx, ry, rot, 0, Math.PI * 2)
+          tc.fill()
+          tc.strokeStyle = css(P.rugDark, 0.5)
+          tc.lineWidth = Math.max(0.8, tw * 0.025)
+          tc.stroke()
+          // yarn ply highlight along the loop
+          tc.strokeStyle = css(P.rugHi, 0.6)
+          tc.lineWidth = Math.max(0.8, tw * 0.035)
+          tc.beginPath()
+          tc.moveTo(lx - side * rx * 0.1 + Math.sin(rot) * ry * 0.5, ly - ry * 0.5)
+          tc.lineTo(lx - side * rx * 0.1 - Math.sin(rot) * ry * 0.1, ly + ry * 0.1)
+          tc.stroke()
+        }
+      const pat = c.createPattern(t, 'repeat')!
+      c.save()
+      c.clip(rugPath())
+      c.setTransform(1, 0, 0, 1, Math.round(((r.x0 + r.x1) / 2) * dpr - tw / 2), Math.round(r.y0 * dpr))
+      c.fillStyle = pat
+      c.fillRect(-cv.width, -cv.height, cv.width * 3, cv.height * 3)
+      c.restore()
+    }
+    c.save()
+    c.clip(rugPath())
+    // ribbed edge: darker, rounded-over border band with a highlight on its crest
+    const edge = 0.14 * HW
+    c.lineJoin = 'round'
+    c.strokeStyle = css(P.rugDark, 0.45)
+    c.lineWidth = edge * 2
+    c.stroke(rugPath())
+    c.strokeStyle = css(P.rugHi, 0.35)
+    c.lineWidth = 2.2
+    c.stroke(rugPath(-edge * 0.95))
+    c.strokeStyle = css(P.shadow, 0.18)
+    c.lineWidth = 1.5
+    c.stroke(rugPath(-edge * 1.08))
+    // a soft fold across the front of the rug, and a gentle one behind
+    const fold = (ax: number, ay: number, bx: number, by: number, qx: number, qy: number, width: number, dark: number) => {
+      const p = new Path2D()
+      p.moveTo(ax, ay)
+      p.quadraticCurveTo(qx, qy, bx, by)
+      c.save()
+      c.lineCap = 'round'
+      c.filter = `blur(${(width * 0.45).toFixed(1)}px)`
+      c.strokeStyle = `rgba(90,50,35,${dark})`
+      c.lineWidth = width
+      c.stroke(p)
+      c.translate(-width * 0.55, -width * 0.6)
+      c.strokeStyle = `rgba(255,236,222,${dark * 0.9})`
+      c.lineWidth = width * 0.7
+      c.stroke(p)
+      c.restore()
+    }
+    fold(r.x0 + (r.x1 - r.x0) * 0.42, r.y1 + 4, r.x1 + 4, r.y0 + (r.y1 - r.y0) * 0.62, r.x0 + (r.x1 - r.x0) * 0.86, r.y1 - (r.y1 - r.y0) * 0.1, 0.2 * HW, 0.3)
+    fold(r.x0 - 4, r.y0 + (r.y1 - r.y0) * 0.3, r.x0 + (r.x1 - r.x0) * 0.32, r.y0 - 4, r.x0 + (r.x1 - r.x0) * 0.1, r.y0 + (r.y1 - r.y0) * 0.08, 0.12 * HW, 0.14)
+    // light from the top left across the rug
+    const rg = c.createLinearGradient(r.x0, r.y0, r.x1, r.y1)
+    rg.addColorStop(0, 'rgba(255,240,228,0.16)')
+    rg.addColorStop(0.6, 'rgba(255,240,228,0)')
+    rg.addColorStop(1, 'rgba(80,45,30,0.12)')
+    c.fillStyle = rg
+    c.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0)
+    c.restore()
+
+    // the cat sinks into the rug: a pressed-down hollow under it, with the knit bunched up round it
     const off = 20000
     c.save()
-    c.shadowColor = css(P.shadow, 0.35)
-    c.shadowBlur = 0.25 * HW * dpr
+    c.clip(rugPath())
     c.shadowOffsetX = off * dpr
-    c.setTransform(dpr * HW, 0, 0, dpr * HW, dpr * (this.ox + 0.05 * HW - off), dpr * (this.oy + 0.08 * HW))
     c.fillStyle = '#000'
+    c.shadowColor = 'rgba(255,232,215,0.4)'
+    c.shadowBlur = 0.1 * HW * dpr
+    c.setTransform(dpr * HW * 1.05, 0, 0, dpr * HW * 1.05, dpr * (this.ox - off - 0.04 * HW), dpr * (this.oy - 0.05 * HW))
     catSilhouette(this.defs, c)
+    c.shadowColor = css(P.shadow, 0.42)
+    c.shadowBlur = 0.22 * HW * dpr
+    c.setTransform(dpr * HW, 0, 0, dpr * HW, dpr * (this.ox + 0.05 * HW - off), dpr * (this.oy + 0.07 * HW))
+    catSilhouette(this.defs, c)
+    c.restore()
     // tighter, darker contact core
-    c.shadowColor = css(P.shadow, 0.3)
+    c.save()
+    c.shadowOffsetX = off * dpr
+    c.fillStyle = '#000'
+    c.shadowColor = css(P.shadow, 0.38)
     c.shadowBlur = 0.05 * HW * dpr
     c.setTransform(dpr * HW * 0.985, 0, 0, dpr * HW * 0.985, dpr * (this.ox + 0.02 * HW - off), dpr * (this.oy + 0.035 * HW))
     catSilhouette(
@@ -252,13 +396,14 @@ export class Cat {
     )
     c.restore()
     // vignette
-    const vg = c.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.hypot(w, h) * 0.6)
+    const vg = c.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.4, w / 2, h * 0.45, Math.hypot(w, h) * 0.6)
     vg.addColorStop(0, 'rgba(107,84,64,0)')
-    vg.addColorStop(1, 'rgba(107,84,64,0.25)')
+    vg.addColorStop(1, 'rgba(107,84,64,0.22)')
     c.fillStyle = vg
     c.fillRect(0, 0, w, h)
     this.blanket = cv
   }
+
 
   // ---------- transforms (cat space) ----------
 
@@ -276,18 +421,16 @@ export class Cat {
   }
   torsoM(): Mat {
     const b = this.breathAmp * (0.5 - 0.5 * Math.cos(this.breath * Math.PI * 2))
+    // the belly rests on the blanket: breathing lifts the back, the ground line stays put
     const px = 0.35
-    const py = -0.76
+    const py = 0.6
     return mul(tr(px + this.slideX.x * 0.5, py + this.slideY.x * 0.5), mul(scl(1 + b * 0.25, 1 + b), tr(-px, -py)))
-  }
-  legM(): Mat {
-    const b = this.breathAmp * 0.4 * (0.5 - 0.5 * Math.cos(this.breath * Math.PI * 2))
-    return mul(tr(0, -0.4), mul(scl(1, 1 + b), tr(0, 0.4)))
   }
   tailTipM(): Mat {
     const j = tailCurve.at(TAIL_JOINT).p
-    const sway = 8 * D2R * Math.sin((this.t / 3.5) * Math.PI * 2)
-    return mul(tr(j[0], j[1]), mul(rot(sway * 0.6), tr(-j[0], -j[1])))
+    // the wrapped tail lies on the blanket: only a faint drift
+    const sway = 1.2 * D2R * Math.sin((this.t / 3.5) * Math.PI * 2)
+    return mul(tr(j[0], j[1]), mul(rot(sway), tr(-j[0], -j[1])))
   }
   partM(id: PartId): Mat {
     switch (id) {
@@ -302,9 +445,6 @@ export class Cat {
         return this.torsoM()
       case 'thigh':
         return mul(this.torsoM(), tr(0, 0))
-      case 'legNear':
-      case 'legFar':
-        return this.legM()
       case 'tailB':
         return this.tailTipM()
       default:
@@ -411,7 +551,7 @@ export class Cat {
     let hy = 0
     let hr = 0
     let lk = 0
-    let lid = 0.96
+    let lid = REST_LID
     let happy = 0
     const fold = [0, 0]
     const sq = [0, 0]
@@ -432,14 +572,14 @@ export class Cat {
       hr = this.zoneSide * 10 * D2R
       const near = this.zoneSide < 0 ? 0 : 1
       sq[near] = 0.6
-      lid = 0.85
+      lid = 0.42
       if (this.bliss > 0.55) happy = 1
     } else if (z === 'cheek') {
       hr = this.zoneSide * 10 * D2R
       if (this.bliss > 0.55) happy = 1
     } else if (z === 'top') {
       // half-lidded but content: both lids close in a little (a relaxed squint, not a glare)
-      lid = 0.7
+      lid = 0.4
       // the ear the finger passes over folds flat; the other stays up
       if (this.finger.on) {
         const [fx, fy] = apply(inv(this.headM()), ...this.toCat(this.finger.x, this.finger.y))
@@ -455,7 +595,21 @@ export class Cat {
     this.headR.step(hr, dt)
     this.look.step(lk, dt)
     this.happy.step(happy, dt)
-    this.lidBase.step(lid, dt)
+    // noticing: the eyes open wide when a finger first appears, then settle back to sleepy
+    if (pointer || this.finger.on) {
+      if (this.t - this.ptrSeenAt > 1.5) this.noticeT = 0
+      this.ptrSeenAt = this.t
+    }
+    let notice = 0
+    if (this.noticeT >= 0) {
+      this.noticeT += dt
+      const t = this.noticeT
+      notice = t < 0.15 ? t / 0.15 : t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 1.1)
+      if (t > 1.8) this.noticeT = -1
+    }
+    if (notice > 0 && z !== 'chin') lid = lid + (1 - lid) * notice
+    if (notice > 0) this.lidBase.step(lid, dt, 400, 40)
+    else this.lidBase.step(lid, dt)
     this.slideX.step(slide[0], dt)
     this.slideY.step(slide[1], dt)
     for (let i = 0; i < 2; i++) {
@@ -514,6 +668,10 @@ export class Cat {
       this.slowBlinks++
       this.slowBlinkAt = this.t + 6 + this.rnd() * 4
       this.onSlowBlink?.()
+    } else if (this.bliss <= 0.5 && !this.finger.on && notice === 0 && this.t > this.restSlowAt) {
+      // at rest, an occasional slow blink (cat for "I trust you")
+      this.slowBlinkT = 0
+      this.restSlowAt = this.t + 9 + this.rnd() * 6
     } else if (this.bliss <= 0.5) this.slowBlinkAt = Math.max(this.slowBlinkAt, this.t + 2)
 
     // ear twitch
@@ -529,10 +687,12 @@ export class Cat {
     const f = this.face
     const lb = Math.max(0, Math.min(1, this.lidBase.x))
     f.open = [Math.min(lb, blink) * (1 - this.squint[0].x * 0.35), Math.min(lb, blink) * (1 - this.squint[1].x * 0.35)]
-    f.squint = [this.squint[0].x, this.squint[1].x]
+    // sleepy-content: a little lower-lid lift whenever the eyes are heavy (not when wide awake)
+    const restSq = 0.6 * smoothstep(0.85, 0.6, lb) * (1 - f.happy)
+    f.squint = [Math.max(this.squint[0].x, restSq), Math.max(this.squint[1].x, restSq)]
     f.happy = smoothstep(0.15, 0.85, this.happy.x)
     f.pupil = [this.pupil[0], this.pupil[1]]
-    f.pupilSize = 0.7 + 0.15 * this.bliss
+    f.pupilSize = 0.66 + 0.15 * this.bliss + 0.14 * notice
     f.look = Math.max(0, this.look.x)
     f.padPush = this.squint[0].x + this.squint[1].x > 0.1 ? 1 : 0
     f.whisk = this.twitchT >= 0 ? 0.05 : 0
@@ -575,15 +735,11 @@ export class Cat {
       tufts(id, m)
       tuftT += performance.now() - a
     }
-    sprite('tailA')
-    sprite('tailB')
-    sprite('footFar')
-    timed('torso', sprite('torso'))
-    timed('thigh', sprite('thigh'))
-    sprite('footNear')
-    sprite('legFar')
-    sprite('chest')
-    sprite('legNear')
+    for (const d of this.defs) {
+      if (d.id === 'earL' || d.id === 'earR' || d.id === 'head') continue
+      const m = sprite(d.id)
+      if (TUFT_PARTS.includes(d.id)) timed(d.id, m)
+    }
     // head casts a soft shadow onto the body
     if (this.headShadow) {
       const def = this.defs.find((d) => d.id === 'head')!

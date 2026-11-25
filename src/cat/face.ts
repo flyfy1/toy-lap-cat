@@ -66,12 +66,31 @@ function eyePath(c: CanvasRenderingContext2D, g: EyeGeo) {
   c.closePath()
 }
 
-/** Upper lid edge for openness o: a level, gently arched line that slides down over the eye.
- *  Level (not following the tilted eye corners) so a half-closed eye reads as content, not cross. */
-function lidPath(c: CanvasRenderingContext2D, cx: number, cy: number, h: number, o: number) {
-  const y0 = cy - h * 0.52 + (1 - o) * h
-  c.moveTo(cx - 0.2, y0 + 0.012)
-  c.quadraticCurveTo(cx, y0 - 0.045 * o - 0.03 * (1 - o), cx + 0.2, y0 + 0.012)
+const lerp2 = (a: [number, number], b: [number, number], t: number): [number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+
+/** The visible eye opening as a lens between the corners: the upper lid curve slides from the full
+ *  eye top (o = 1) down toward the lower lid (o = 0), keeping its corners, so a half-closed eye is a
+ *  soft almond (content), never a cut-off trapezoid (cross). The lower lid rises with the squint. */
+function openGeo(g: EyeGeo, o: number, sq: number) {
+  const k = 0.12 + 0.88 * o
+  const b1 = lerp2(g.b1, g.t2, sq * 0.3)
+  const b2 = lerp2(g.b2, g.t1, sq * 0.3)
+  const t1 = lerp2(b2, g.t1, k)
+  const t2 = lerp2(b1, g.t2, k)
+  // keep a soft dome on a half-closed lid (a flat lid reads as bored)
+  const dome = 0.12 * o * (1 - o)
+  t1[1] -= dome
+  t2[1] -= dome
+  return { t1, t2, b1, b2 }
+}
+function topEdge(c: CanvasRenderingContext2D, g: EyeGeo, q: ReturnType<typeof openGeo>) {
+  c.moveTo(g.ix, g.iy)
+  c.bezierCurveTo(q.t1[0], q.t1[1], q.t2[0], q.t2[1], g.ox, g.oy)
+}
+function lensPath(c: CanvasRenderingContext2D, g: EyeGeo, q: ReturnType<typeof openGeo>) {
+  topEdge(c, g, q)
+  c.bezierCurveTo(q.b1[0], q.b1[1], q.b2[0], q.b2[1], g.ix, g.iy)
+  c.closePath()
 }
 
 function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: number) {
@@ -82,49 +101,34 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
   const h = EYE.h
   const open = Math.max(0, Math.min(1, s.open[idx] * (1 - s.happy)))
   const sq = s.squint[idx]
-  const belowLid = () => {
-    c.beginPath()
-    lidPath(c, cx, cy, h, open)
-    c.lineTo(cx + 0.2, cy + 0.3)
-    c.lineTo(cx - 0.2, cy + 0.3)
-    c.closePath()
-  }
-  const aboveSquint = () => {
-    c.beginPath()
-    c.rect(cx - 0.2, cy - 0.3, 0.4, 0.3 + h * 0.5 - sq * h * 0.45)
-  }
+  const q = openGeo(g, open, sq)
+  // y of the upper lid edge at the eye centre (cubic midpoint)
+  const lidY = 0.125 * g.iy + 0.375 * q.t1[1] + 0.375 * q.t2[1] + 0.125 * g.oy
 
-  if (open > 0.04) {
+  if (open > 0.06) {
     // soft dark socket rim so the eye sits in the fur
     c.save()
-    belowLid()
-    c.clip()
     c.beginPath()
     eyePath(c, g)
-    c.strokeStyle = 'rgba(42,30,24,0.2)'
+    c.strokeStyle = 'rgba(42,30,24,0.16)'
     c.lineWidth = 2.4 * px
     c.stroke()
     c.restore()
 
     c.save()
-    // clip: eye shape, below the upper lid, above the lower lid
     c.beginPath()
-    eyePath(c, g)
+    lensPath(c, g, q)
     c.clip()
-    belowLid()
-    c.clip()
-    if (sq > 0.01) {
-      aboveSquint()
-      c.clip()
-    }
-    // iris
+    // iris: soft green with a warm hazel ring round the pupil and a warm olive-brown rim
     const pxo = cx + s.pupil[0]
     const pyo = cy + s.pupil[1]
     const ig = c.createRadialGradient(pxo, pyo, 0.01, cx, cy, EYE.w * 0.56)
-    ig.addColorStop(0, '#D9DE78')
-    ig.addColorStop(0.35, '#C9D36A')
-    ig.addColorStop(0.78, '#8DB257')
-    ig.addColorStop(1, '#5E8240')
+    ig.addColorStop(0, '#C8B860')
+    ig.addColorStop(0.3, '#C2C56C')
+    ig.addColorStop(0.58, '#A9BE66')
+    ig.addColorStop(0.8, '#93AE5E')
+    ig.addColorStop(0.93, '#86894A')
+    ig.addColorStop(1, '#6E6238')
     c.fillStyle = ig
     c.fillRect(cx - 0.2, cy - 0.2, 0.4, 0.4)
     // faint radial iris fibres
@@ -146,65 +150,40 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.beginPath()
     c.arc(pxo, pyo, pr * 1.08, 0, Math.PI * 2)
     c.fill()
-    // upper lid shadow on the top third
-    const lidY = Math.max(cy - h * 0.55, cy - h * 0.52 + (1 - open) * h)
-    const sg = c.createLinearGradient(0, lidY - 0.01, 0, lidY + h * 0.38)
+    // upper lid casts a soft shadow onto the eye
+    const sg = c.createLinearGradient(0, lidY - 0.02, 0, lidY + h * 0.34)
     sg.addColorStop(0, 'rgba(30,22,14,0.5)')
     sg.addColorStop(1, 'rgba(30,22,14,0)')
     c.fillStyle = sg
     c.fillRect(cx - 0.2, cy - 0.2, 0.4, 0.4)
-    // catchlights: same side in both eyes (upper-left big, lower-right small)
+    // catchlights: same side in both eyes (upper-left big, lower-right small); the big one rides
+    // just under the lid so a sleepy eye still shines
     c.fillStyle = '#FFFFFF'
+    const hy = Math.max(cy - 0.036, lidY + 0.03)
+    const hk = 0.72 + 0.28 * open
     c.beginPath()
-    c.ellipse(cx - 0.032, cy - 0.036, 0.034, 0.03, -0.4, 0, Math.PI * 2)
+    c.ellipse(cx - 0.034, hy, 0.034 * hk, 0.028 * hk, -0.4, 0, Math.PI * 2)
     c.fill()
+    c.globalAlpha = 0.85
     c.beginPath()
-    c.arc(cx + 0.043, cy + 0.04, 0.014, 0, Math.PI * 2)
+    c.arc(cx + 0.045, Math.max(cy + 0.038, hy + 0.04), 0.013, 0, Math.PI * 2)
     c.fill()
     c.restore()
 
-    // lid lines: the eye outline below the lid, and the lid edge across the eye
+    // lid lines: the lower outline thin, the upper lid edge a little heavier
     c.save()
     c.lineCap = 'round'
     c.lineJoin = 'round'
     c.strokeStyle = LID
-    c.save()
-    belowLid()
-    c.clip()
-    if (sq > 0.01) {
-      aboveSquint()
-      c.clip()
-    }
-    c.lineWidth = 1.1 * px
+    c.lineWidth = 1.05 * px
     c.beginPath()
-    eyePath(c, g)
+    c.moveTo(g.ox, g.oy)
+    c.bezierCurveTo(q.b1[0], q.b1[1], q.b2[0], q.b2[1], g.ix, g.iy)
     c.stroke()
-    c.restore()
-    if (sq > 0.01) {
-      // lower lid edge when squinting
-      c.save()
-      c.beginPath()
-      eyePath(c, g)
-      c.clip()
-      belowLid()
-      c.clip()
-      c.lineWidth = 1.2 * px
-      c.beginPath()
-      const yb = cy + h * 0.5 - sq * h * 0.45
-      c.moveTo(cx - 0.2, yb)
-      c.lineTo(cx + 0.2, yb)
-      c.stroke()
-      c.restore()
-    }
-    if (open < 0.97) {
-      c.beginPath()
-      eyePath(c, g)
-      c.clip()
-      c.lineWidth = 1.6 * px
-      c.beginPath()
-      lidPath(c, cx, cy, h, open)
-      c.stroke()
-    }
+    c.lineWidth = (1.5 + 0.3 * (1 - open)) * px
+    c.beginPath()
+    topEdge(c, g, q)
+    c.stroke()
     c.restore()
   } else {
     // closed: a curved line. happy -> upward arc
@@ -224,6 +203,7 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.restore()
   }
 }
+
 
 export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) {
   drawEye(c, -1, s, px)
