@@ -11,7 +11,7 @@ export const LOCALES = [
 ] as const
 
 export type Locale = (typeof LOCALES)[number]['code']
-export type ToyId = 'charge' | 'void' | 'smash' | 'pop' | 'knock' | 'purr'
+export type ToyId = 'charge' | 'void' | 'smash' | 'pop' | 'knock' | 'purr' | 'squish'
 
 const en = {
   name_charge: 'Charge Burst',
@@ -26,6 +26,7 @@ const en = {
   scan: 'Scan to open on a phone, or to share in WeChat',
   share_heading: 'Share with friends',
   name_knock: "Knock on Wood",
+  name_squish: "Squishy Bun",
   name_purr: 'Lap Cat',
   desc_purr: 'A sleepy cat on a blanket. Stroke its fur and it leans in, slow-blinks and purrs, with sound and, on Android, a purr you can feel. The belly is a trap. A tiny cozy toy, no sign-up.',
   hint_purr: 'Pet the cat · tap for sound',
@@ -102,6 +103,7 @@ const zhCN: Messages = {
   scan: '手机扫码打开，或扫码分享到微信',
   share_heading: '分享给朋友',
   name_knock: "电子木鱼",
+  name_squish: "捏捏团子",
   name_purr: '云撸猫',
   desc_purr: '毯子上一只犯困的猫。顺着毛摸它，它会蹭过来、慢慢眨眼、呼噜呼噜；安卓手机上还能用手指感觉到呼噜震动。肚皮是陷阱。打开即玩的治愈小玩具。',
   hint_purr: '摸摸猫 · 点一下开声音',
@@ -177,6 +179,7 @@ const es: Messages = {
   scan: 'Escanea para abrirlo en el móvil o compartirlo en WeChat',
   share_heading: 'Compartir con amigos',
   name_knock: "Toca Madera",
+  name_squish: "Bollito Blandito",
   name_purr: 'Gato Mimoso',
   desc_purr: 'Un gato adormilado sobre una manta. Acaríciale el pelo y se arrima, parpadea despacio y ronronea, con sonido y, en Android, un ronroneo que se siente. La barriga es una trampa. Un juguete acogedor, sin registro.',
   hint_purr: 'Acaricia al gato · toca para el sonido',
@@ -252,6 +255,7 @@ const fr: Messages = {
   scan: 'Scanne pour l’ouvrir sur ton téléphone ou le partager sur WeChat',
   share_heading: 'Partager avec des amis',
   name_knock: "Touche du Bois",
+  name_squish: "Petit Mochi Tout Mou",
   name_purr: 'Chat Câlin',
   desc_purr: 'Un chat somnolent sur une couverture. Caresse son pelage : il se blottit, cligne lentement des yeux et ronronne, avec le son et, sur Android, un ronron qu’on sent. Le ventre est un piège. Un petit jouet douillet, sans inscription.',
   hint_purr: 'Caresse le chat · touche pour le son',
@@ -331,6 +335,7 @@ const ja: Messages = {
   scan: 'スマホで読み取って開く／WeChat でシェア',
   share_heading: '友だちにシェア',
   name_knock: "電子木魚 ぽくぽく",
+  name_squish: "もちもちにぎにぎ",
   name_purr: 'なでなで猫',
   desc_purr: '毛布の上の眠そうな猫。毛並みをなでると寄りかかってきて、ゆっくりまばたきしてゴロゴロ。Android では指でゴロゴロを感じられます。お腹は罠。登録不要のほっこりおもちゃ。',
   hint_purr: '猫をなでる · タップで音',
