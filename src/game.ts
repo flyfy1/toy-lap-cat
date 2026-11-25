@@ -576,8 +576,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
 
   let sleepAcc = 0
   const frame = (dtRaw: number) => {
-    // (a mouse hand over the canvas keeps the full frame rate)
-    if (cat.asleep && freezeAt === null && cat.baker.done && ![...ptrs.values()].some((p) => p.down || p.type !== 'touch')) {
+    // (a mouse hand that moved in the last 1.5 s keeps the full frame rate)
+    if (cat.asleep && freezeAt === null && cat.baker.done && ![...ptrs.values()].some((p) => p.down || (p.type !== 'touch' && performance.now() - p.t < 1500))) {
       // asleep: 20 fps is plenty for breathing and the drifting z
       sleepAcc += dtRaw
       if (sleepAcc < 0.05) return
@@ -720,6 +720,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
     },
     dispose() {
       stop()
+      canvas.style.cursor = ''
       purr?.stop()
       hiss?.stop()
       window.removeEventListener('resize', onResize)

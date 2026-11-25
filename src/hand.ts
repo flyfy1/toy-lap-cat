@@ -151,7 +151,7 @@ export class Hand {
       this.bend[k] += this.bv[k] * dt
     }
     // ---- paint the hand (offscreen, unrotated device px around the hotspot) ----
-    const u = 0.092 * i.HW * (1 + 0.07 * lift)
+    const u = 0.092 * i.HW * (1 + 0.1 * lift)
     const half = Math.ceil(7 * 0.1 * i.HW * 1.1 * dpr)
     const cv = this.cv
     if (cv.width !== half * 2) cv.width = cv.height = half * 2

@@ -6,7 +6,7 @@ Lap Cat (云撸猫 (zh-CN), Gato Mimoso (es), Chat Câlin (fr), なでなで猫 
 
 ## How to play
 
-1. Stroke the cat with your finger or mouse (on a computer, just move the mouse over it). The fur combs flat along your stroke, and ruffles if you go against it.
+1. Stroke the cat with your finger or mouse (on a computer, hold the button down and drag). The fur combs flat along your stroke, and ruffles if you go against it.
 2. The chin, the cheeks, behind the ears and the top of the head are the best spots: the cat leans in, closes its eyes and purrs. Stroking the back the way the fur grows is good too. Tap once to turn on the sound; on Android you also feel the purr through the finger touching the cat.
 3. It dislikes having its tail and paws touched and its fur stroked the wrong way, and it gets tired of the same spot after a while. Ears go back, then flat, the tail thumps and the purr stops: that is the warning before a swat.
 4. Keep it happy and it starts kneading the blanket ("making biscuits"). Pause while it is blissed out and it rolls over to show the belly. Touching it is a trap most of the time (paws grab, back feet kick), but about one time in six the belly rub is allowed.
