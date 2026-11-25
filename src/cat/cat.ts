@@ -271,7 +271,7 @@ export class Cat {
     const fold = this.earFold[i].x
     const twitch = this.twitchT >= 0 && this.twitchSide === side ? this.twitchAngle() : 0
     const relax = 8 * D2R * Math.max(0, Math.min(1, this.happy.x))
-    const r = tilt + side * (fold * 0.55 + relax) + this.earTurn[i].x + side * twitch
+    const r = tilt + side * (fold * 0.4 + relax) + this.earTurn[i].x + side * twitch
     return mul(this.headM(), mul(tr(side * EAR.x, EAR.y + fold * 0.03), mul(rot(r), scl(1 - fold * 0.12, 1 - fold * 0.55))))
   }
   torsoM(): Mat {
@@ -438,13 +438,16 @@ export class Cat {
       hr = this.zoneSide * 10 * D2R
       if (this.bliss > 0.55) happy = 1
     } else if (z === 'top') {
-      lid = 0.5
-      // fold the ears; the one under the finger most
-      fold[0] = this.zoneSide <= 0 ? 1 : 0.6
-      fold[1] = this.zoneSide >= 0 ? 1 : 0.6
+      // half-lidded but content: both lids close in a little (a relaxed squint, not a glare)
+      lid = 0.7
+      // the ear the finger passes over folds flat; the other stays up
       if (this.finger.on) {
-        const [fx] = apply(inv(this.headM()), ...this.toCat(this.finger.x, this.finger.y))
-        if (Math.abs(fx) < 0.12) fold[0] = fold[1] = 1
+        const [fx, fy] = apply(inv(this.headM()), ...this.toCat(this.finger.x, this.finger.y))
+        for (let i = 0; i < 2; i++) {
+          const ex = (i === 0 ? -1 : 1) * EAR.x
+          const d = Math.hypot(fx - ex, fy - (EAR.y - 0.08))
+          fold[i] = 0.85 * (1 - smoothstep(0.1, 0.3, d))
+        }
       }
     }
     this.headX.step(hx + this.slideX.x * 0.4, dt)

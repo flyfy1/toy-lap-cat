@@ -57,7 +57,7 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
   canvas.addEventListener('contextmenu', noMenu)
   canvas.style.cursor = 'none'
 
-  const dbg: Record<string, unknown> = { ready: false, pose, frozen: freezeAt !== null, tufts: cat.tuftCount, cat }
+  const dbg: Record<string, unknown> = { ready: false, pose, frozen: freezeAt !== null, tufts: cat.tuftCount, cat, audio }
   ;(window as W).__cat = dbg
 
   // ---------- scripted fingers (poses and the canned stroke) ----------

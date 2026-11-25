@@ -66,15 +66,12 @@ function eyePath(c: CanvasRenderingContext2D, g: EyeGeo) {
   c.closePath()
 }
 
-const lerp2 = (a: [number, number], b: [number, number], t: number): [number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
-
-/** Upper lid edge for openness o: interpolates from the top curve (open) to the bottom curve (closed). */
-function lidCtrl(g: EyeGeo, o: number): [[number, number], [number, number]] {
-  const k = 1 - o
-  // the closed lid sits a little above the bottom curve
-  const b1: [number, number] = [g.b2[0], g.b2[1] - 0.05]
-  const b2: [number, number] = [g.b1[0], g.b1[1] - 0.05]
-  return [lerp2(g.t1, b1, k), lerp2(g.t2, b2, k)]
+/** Upper lid edge for openness o: a level, gently arched line that slides down over the eye.
+ *  Level (not following the tilted eye corners) so a half-closed eye reads as content, not cross. */
+function lidPath(c: CanvasRenderingContext2D, cx: number, cy: number, h: number, o: number) {
+  const y0 = cy - h * 0.52 + (1 - o) * h
+  c.moveTo(cx - 0.2, y0 + 0.012)
+  c.quadraticCurveTo(cx, y0 - 0.045 * o - 0.03 * (1 - o), cx + 0.2, y0 + 0.012)
 }
 
 function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: number) {
@@ -85,39 +82,39 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
   const h = EYE.h
   const open = Math.max(0, Math.min(1, s.open[idx] * (1 - s.happy)))
   const sq = s.squint[idx]
-  const [l1, l2] = lidCtrl(g, open)
-
-  const openPath = () => {
+  const belowLid = () => {
     c.beginPath()
-    c.moveTo(g.ix, g.iy)
-    c.bezierCurveTo(l1[0], l1[1], l2[0], l2[1], g.ox, g.oy)
-    c.bezierCurveTo(g.b1[0], g.b1[1], g.b2[0], g.b2[1], g.ix, g.iy)
+    lidPath(c, cx, cy, h, open)
+    c.lineTo(cx + 0.2, cy + 0.3)
+    c.lineTo(cx - 0.2, cy + 0.3)
     c.closePath()
   }
-  // soft dark socket rim so the eye sits in the fur
-  c.save()
-  openPath()
-  c.strokeStyle = 'rgba(42,30,24,0.2)'
-  c.lineWidth = 2.4 * px
-  c.stroke()
-  c.restore()
+  const aboveSquint = () => {
+    c.beginPath()
+    c.rect(cx - 0.2, cy - 0.3, 0.4, 0.3 + h * 0.5 - sq * h * 0.45)
+  }
 
   if (open > 0.04) {
+    // soft dark socket rim so the eye sits in the fur
+    c.save()
+    belowLid()
+    c.clip()
+    c.beginPath()
+    eyePath(c, g)
+    c.strokeStyle = 'rgba(42,30,24,0.2)'
+    c.lineWidth = 2.4 * px
+    c.stroke()
+    c.restore()
+
     c.save()
     // clip: eye shape, below the upper lid, above the lower lid
     c.beginPath()
     eyePath(c, g)
     c.clip()
-    c.beginPath()
-    c.moveTo(g.ix - 0.05, g.iy)
-    c.bezierCurveTo(l1[0], l1[1], l2[0], l2[1], g.ox + side * 0.05, g.oy)
-    c.lineTo(g.ox + side * 0.05, cy + 0.3)
-    c.lineTo(g.ix - side * 0.05, cy + 0.3)
-    c.closePath()
+    belowLid()
     c.clip()
     if (sq > 0.01) {
-      c.beginPath()
-      c.rect(cx - 0.2, cy - 0.3, 0.4, 0.3 + h * 0.5 - sq * h * 0.45)
+      aboveSquint()
       c.clip()
     }
     // iris
@@ -150,8 +147,8 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.arc(pxo, pyo, pr * 1.08, 0, Math.PI * 2)
     c.fill()
     // upper lid shadow on the top third
-    const lidY = Math.min(l1[1], l2[1]) * 0.75 + cy * 0.25
-    const sg = c.createLinearGradient(0, lidY - 0.02, 0, lidY + h * 0.4)
+    const lidY = Math.max(cy - h * 0.55, cy - h * 0.52 + (1 - open) * h)
+    const sg = c.createLinearGradient(0, lidY - 0.01, 0, lidY + h * 0.38)
     sg.addColorStop(0, 'rgba(30,22,14,0.5)')
     sg.addColorStop(1, 'rgba(30,22,14,0)')
     c.fillStyle = sg
@@ -165,25 +162,55 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.arc(cx + 0.043, cy + 0.04, 0.014, 0, Math.PI * 2)
     c.fill()
     c.restore()
-  }
 
-  // lid line along the eye opening
-  c.save()
-  c.lineCap = 'round'
-  c.lineJoin = 'round'
-  c.strokeStyle = LID
-  if (open > 0.04) {
+    // lid lines: the eye outline below the lid, and the lid edge across the eye
+    c.save()
+    c.lineCap = 'round'
+    c.lineJoin = 'round'
+    c.strokeStyle = LID
+    c.save()
+    belowLid()
+    c.clip()
+    if (sq > 0.01) {
+      aboveSquint()
+      c.clip()
+    }
     c.lineWidth = 1.1 * px
-    openPath()
-    c.stroke()
-    // heavier upper lid edge
-    c.lineWidth = 1.5 * px
     c.beginPath()
-    c.moveTo(g.ix, g.iy)
-    c.bezierCurveTo(l1[0], l1[1], l2[0], l2[1], g.ox, g.oy)
+    eyePath(c, g)
     c.stroke()
+    c.restore()
+    if (sq > 0.01) {
+      // lower lid edge when squinting
+      c.save()
+      c.beginPath()
+      eyePath(c, g)
+      c.clip()
+      belowLid()
+      c.clip()
+      c.lineWidth = 1.2 * px
+      c.beginPath()
+      const yb = cy + h * 0.5 - sq * h * 0.45
+      c.moveTo(cx - 0.2, yb)
+      c.lineTo(cx + 0.2, yb)
+      c.stroke()
+      c.restore()
+    }
+    if (open < 0.97) {
+      c.beginPath()
+      eyePath(c, g)
+      c.clip()
+      c.lineWidth = 1.6 * px
+      c.beginPath()
+      lidPath(c, cx, cy, h, open)
+      c.stroke()
+    }
+    c.restore()
   } else {
     // closed: a curved line. happy -> upward arc
+    c.save()
+    c.lineCap = 'round'
+    c.strokeStyle = LID
     const midY = cy + 0.02
     const arcUp = s.happy
     const cy1 = midY + 0.045 * (1 - arcUp) - 0.06 * arcUp
@@ -194,8 +221,8 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.moveTo(ix, g.iy + 0.01)
     c.quadraticCurveTo(cx, cy1, ox, g.oy + 0.012)
     c.stroke()
+    c.restore()
   }
-  c.restore()
 }
 
 export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) {
