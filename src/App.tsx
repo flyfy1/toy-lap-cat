@@ -8,7 +8,6 @@ import { startGame, type CatStats, type GameApi } from './game'
 import { applyCoat } from './cat/palette'
 import { audio } from './engine/AudioEngine'
 import { haptic } from './engine/juice'
-import { drawReceipt } from './receipt'
 
 const OG = new URLSearchParams(location.search).get('og') === '1'
 const SWATCH: Record<Coat, string> = { tabby: '#8A7360', orange: '#D98B4A', tux: '#2B2522', void: '#121014' }
@@ -150,11 +149,14 @@ export default function App() {
     track('coat_set', { coat: c })
   }
 
-  const openReceipt = () => {
+  const openReceipt = async () => {
     const g = api.current
     if (!g) return
     const r = g.rating()
-    const cv = drawReceipt(g.snapshot(), g.stats, r, nameRef.current)
+    const snap = g.snapshot()
+    // the receipt renderer is loaded on demand (keeps the first load small)
+    const { drawReceipt } = await import('./receipt')
+    const cv = drawReceipt(snap, g.stats, r, nameRef.current)
     track('share_card', { traps: g.stats.traps, rating_x10: Math.round(r * 10) })
     const url = cv.toDataURL('image/png')
     setReceipt({ url, blob: null })

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import qrcode from 'qrcode-generator'
 import { t, type ToyId } from '../i18n'
 import { NETWORKS, shareText, shareUrl, stats } from '../share'
 import { track } from '../analytics'
@@ -7,7 +6,9 @@ import { pillClass } from './MoreMenu'
 
 const isTouch = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 
-function qrDataUrl(text: string): string {
+/** The QR encoder is loaded on demand: only the desktop share dialog needs it. */
+async function qrDataUrl(text: string): Promise<string> {
+  const { default: qrcode } = await import('qrcode-generator')
   const qr = qrcode(0, 'M')
   qr.addData(text, 'Byte')
   qr.make()
@@ -42,7 +43,7 @@ export function ShareButton({ toy }: { toy: ToyId }) {
         if ((err as DOMException)?.name === 'AbortError') return
       }
     }
-    setPayload({ url, text, qr: qrDataUrl(url) })
+    setPayload({ url, text, qr: await qrDataUrl(url) })
     setCopied(false)
     setOpen(true)
   }

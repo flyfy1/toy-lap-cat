@@ -73,7 +73,10 @@ export function drawReceipt(snap: HTMLCanvasElement, s: CatStats, rating: number
   c.textBaseline = 'alphabetic'
   let y = 46 + ih + 86
   c.textAlign = 'center'
-  c.font = `800 52px ${MONO}`
+  // long titles (es, fr) shrink to fit the paper
+  let fs = 52
+  c.font = `800 ${fs}px ${MONO}`
+  while (fs > 30 && c.measureText(t('tax_title')).width > pw - pad * 2) c.font = `800 ${--fs}px ${MONO}`
   c.fillText(t('tax_title'), pw / 2, y)
   y += 46
   c.font = `500 26px ${MONO}`
@@ -96,7 +99,9 @@ export function drawReceipt(snap: HTMLCanvasElement, s: CatStats, rating: number
   rule(y)
   y += 56
   const row = (label: string, value: string, bold = false) => {
-    c.font = `${bold ? 800 : 500} 32px ${MONO}`
+    let rf = 32
+    c.font = `${bold ? 800 : 500} ${rf}px ${MONO}`
+    while (rf > 22 && c.measureText(label + value).width > pw - pad * 2 - 60) c.font = `${bold ? 800 : 500} ${--rf}px ${MONO}`
     c.textAlign = 'left'
     c.fillText(label, pad + 6, y)
     c.textAlign = 'right'

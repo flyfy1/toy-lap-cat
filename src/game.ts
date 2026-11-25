@@ -486,7 +486,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         p.vy *= 0.5
       }
       pointer = { x: p.x, y: p.y }
-      if (p.type === 'touch' ? p.down : true) {
+      // a mouse pets by hovering, but only while it moves; a parked cursor is not petting
+      if (p.down || (p.type !== 'touch' && nowMs - p.t < 400)) {
         touches.push({ x: p.x, y: p.y, vx: p.vx, vy: p.vy })
         if (cat.hit(p.x, p.y)) {
           maxSpeed = Math.max(maxSpeed, Math.hypot(p.vx, p.vy))

@@ -137,6 +137,7 @@ export class Cat {
   reversals: number[] = []
   lastV: [number, number] | null = null
   roughSaid = false
+  swatCool = 0
   petT = 0
   onEvent?: (e: CatEvent, n: number) => void
   // belly trap
@@ -384,63 +385,74 @@ export class Cat {
 
     const HW = this.HW
     const r = this.rugRect(w, h)
-    const rugPath = (k = 0) => {
+    /** A point on the rug edge at angle th (k: outset in css px). */
+    const rugPt = (th: number, k = 0): [number, number] => {
       // a soft superellipse with a slight hand-made wobble
-      const p = new Path2D()
       const cx = (r.x0 + r.x1) / 2
       const cy = (r.y0 + r.y1) / 2
       const rx = (r.x1 - r.x0) / 2 + k
       const ry = (r.y1 - r.y0) / 2 + k
+      const ct = Math.cos(th)
+      const st = Math.sin(th)
+      const e = 0.8
+      // a throw lies a little unevenly: slow waves along the edge where the fabric drapes
+      const wob = 1 + 0.008 * Math.sin(th * 2 + 0.7) + 0.006 * Math.sin(th * 5 + 1.9) + 0.003 * Math.sin(th * 11 + 0.4)
+      let x = rx * wob * Math.sign(ct) * Math.pow(Math.abs(ct), e)
+      let y = ry * wob * Math.sign(st) * Math.pow(Math.abs(st), e)
+      // a touch of perspective (front edge wider) and a slight casual tilt
+      x *= 1 + 0.045 * (y / ry)
+      const tilt = -0.035
+      const xr = x * Math.cos(tilt) - y * Math.sin(tilt)
+      y = x * Math.sin(tilt) + y * Math.cos(tilt)
+      return [cx + xr, cy + y]
+    }
+    const rugPath = (k = 0) => {
+      const p = new Path2D()
       const N = 160
       for (let i = 0; i <= N; i++) {
-        const th = (i / N) * Math.PI * 2
-        const ct = Math.cos(th)
-        const st = Math.sin(th)
-        const e = 0.8
-        // a throw lies a little unevenly: slow waves along the edge where the fabric drapes
-        const wob = 1 + 0.008 * Math.sin(th * 2 + 0.7) + 0.006 * Math.sin(th * 5 + 1.9) + 0.003 * Math.sin(th * 11 + 0.4)
-        let x = rx * wob * Math.sign(ct) * Math.pow(Math.abs(ct), e)
-        let y = ry * wob * Math.sign(st) * Math.pow(Math.abs(st), e)
-        // a touch of perspective (front edge wider) and a slight casual tilt
-        x *= 1 + 0.045 * (y / ry)
-        const tilt = -0.035
-        const xr = x * Math.cos(tilt) - y * Math.sin(tilt)
-        y = x * Math.sin(tilt) + y * Math.cos(tilt)
-        x = cx + xr
-        y = cy + y
+        const [x, y] = rugPt((i / N) * Math.PI * 2, k)
         if (i === 0) p.moveTo(x, y)
         else p.lineTo(x, y)
       }
       p.closePath()
       return p
     }
-    // yarn fringe on the two short ends (drawn first; the throw covers the roots)
+    // yarn fringe on the two short ends, following the edge (drawn first; the throw covers the roots)
     {
       const nr = mulberry32(11)
-      const cx = (r.x0 + r.x1) / 2
-      const span = (r.x1 - r.x0) * 0.3
-      const step = Math.max(4, 0.05 * HW)
       c.save()
       c.lineCap = 'round'
-      for (const [yy, dir] of [
-        [r.y0, -1],
-        [r.y1, 1],
-      ] as const)
-        for (let x = cx - span; x <= cx + span; x += step * (0.8 + 0.4 * nr())) {
+      for (const mid of [-Math.PI / 2, Math.PI / 2]) {
+        let th = mid - 0.62
+        while (th < mid + 0.62) {
+          const [x0, y0] = rugPt(th, -0.05 * HW)
+          const [ex, ey] = rugPt(th, 0)
+          const [ox, oy] = rugPt(th, 1)
+          let nx = ox - ex
+          let ny = oy - ey
+          const nl = Math.hypot(nx, ny) || 1
+          nx /= nl
+          ny /= nl
           // short soft yarn ends, a little uneven, as on a hand-knitted throw
-          const L = 0.075 * HW * (0.75 + 0.5 * nr())
+          const L = 0.05 * HW + 0.075 * HW * (0.75 + 0.5 * nr())
           const sway = (nr() - 0.5) * 0.06 * HW
-          const y0 = yy - dir * 0.05 * HW
+          const tx = x0 + nx * L - ny * sway
+          const ty = y0 + ny * L + nx * sway
           c.strokeStyle = css(P.rugDark, 0.55)
           c.lineWidth = Math.max(1.2, 0.02 * HW)
           c.beginPath()
-          c.moveTo(x, y0)
-          c.quadraticCurveTo(x + sway * 0.2, yy + dir * L * 0.5, x + sway, yy + dir * L)
+          c.moveTo(x0, y0)
+          c.quadraticCurveTo(x0 + nx * L * 0.5 - ny * sway * 0.2, y0 + ny * L * 0.5 + nx * sway * 0.2, tx, ty)
           c.stroke()
           c.strokeStyle = css(P.rugHi, 0.35)
           c.lineWidth = Math.max(0.6, 0.008 * HW)
           c.stroke()
+          // step along the edge by arc length
+          const [bx, by] = rugPt(th + 0.01)
+          const ds = Math.max(1, Math.hypot(bx - ex, by - ey) / 0.01)
+          th += (0.05 * HW * (0.8 + 0.4 * nr())) / ds
         }
+      }
       c.restore()
     }
     // a thin knitted throw: only a soft, close shadow on the sofa
@@ -716,6 +728,8 @@ export class Cat {
     for (const id of HIT_ORDER) {
       if (!this.has(id)) continue
       if (id === 'belly' && this.roll.x < 0.5) continue
+      // a paw that is reaching out (swat, clamp) is not a new touch on the beans
+      if ((id === 'legNear' && this.aimNK.x > 0.3) || (id === 'legFar' && this.aimFK.x > 0.3)) continue
       const m = this.partM(id)
       const [lx, ly] = apply(inv(m), cx, cy)
       const d = this.sprite(id).field.sample(lx, ly)
@@ -870,7 +884,7 @@ export class Cat {
       }
     } else {
       if (active) this.sleepy = 0
-      else if (this.belly === 'none' && this.glass.state === 'idle') {
+      else if (this.belly === 'none' && (this.glass.state === 'idle' || this.glass.state === 'gone')) {
         const before = this.sleepy
         this.sleepy = Math.min(1, this.sleepy + dt / 45)
         if (before < 0.5 && this.sleepy >= 0.5) this.yawnT = 0
@@ -893,9 +907,11 @@ export class Cat {
     // ---- belly trap (1.10) ----
     const onBelly = this.finger.on && zone === 'belly'
     this.blissHighT = this.bliss > 0.6 && !this.asleep ? this.blissHighT + dt : 0
+    if (this.swatCool > 0) this.swatCool -= dt
     switch (this.belly) {
       case 'none':
-        if (this.blissHighT > 3 && this.irk < 0.3 && this.knead === 0 && this.t > this.bellyCool && this.glass.state === 'idle') {
+        // the cat offers the belly when the petting pauses while it is blissed out
+        if (this.blissHighT > 3 && this.contact > 0.8 && this.irk < 0.3 && this.knead === 0 && this.t > this.bellyCool && this.glass.state === 'idle') {
           this.belly = 'invite'
           this.bellyT = 0
           this.emit('belly_invite')
@@ -993,11 +1009,12 @@ export class Cat {
           else blissRate = 0.3
           break
       }
-      if (this.zoneTime > 8) irkRate = Math.max(irkRate, 0.06)
+      // overstimulation: the same spot for a long time slowly wears thin
+      if (this.zoneTime > 12) irkRate = Math.max(irkRate, 0.03)
       if (rough) irkRate = Math.max(irkRate, 0.25)
     } else if (this.finger.on && this.asleep) blissRate = 0.15
     if (this.belly === 'trap') irkRate = 0
-    const irkK = COAT.id === 'tux' ? 1.3 : 1
+    const irkK = (COAT.id === 'tux' ? 1.3 : 1) * (this.swatCool > 0 ? 0.35 : 1)
     irkRate = Math.min(0.3 * irkK, irkRate * irkK)
     if (blissRate > 0) this.bliss = Math.min(1, this.bliss + blissRate * (1 - 0.7 * this.irk) * dt)
     else if (!this.finger.on) this.bliss = Math.max(0, this.bliss - 0.05 * dt)
@@ -1048,6 +1065,7 @@ export class Cat {
       this.swatT = 0
       this.swatAt = fingerCat
       this.irk = 0.35
+      this.swatCool = 3
       this.emit('swat')
     }
     if (this.swatT >= 0) {
@@ -1063,9 +1081,9 @@ export class Cat {
     this.claws = this.claws.filter((c) => c.t < 1.2)
     // tail thumps at stage 2
     if (stage === 2) {
-      const before = Math.floor(this.thumpPhase * 2)
+      const before = Math.floor(this.thumpPhase)
       this.thumpPhase += dt * 2.2
-      if (Math.floor(this.thumpPhase * 2) > before) this.emit('thump')
+      if (Math.floor(this.thumpPhase) > before) this.emit('thump')
     }
 
     // ---- kneading (bliss >= 0.85 for 5 s) ----
@@ -1083,7 +1101,7 @@ export class Cat {
         this.biscuitsNow++
         this.emit('biscuit')
       }
-      if (this.bliss < 0.7 || this.irk > 0.3 || this.t - this.kneadStart > 10 || this.asleep || rolled) {
+      if (this.bliss < 0.7 || this.irk > 0.3 || this.t - this.kneadStart > 10 || this.contact > 1.2 || this.asleep || rolled) {
         this.knead = 0
         this.kneadCool = this.t + 20
         this.emit('knead_end', this.biscuitsNow)
