@@ -554,6 +554,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
       purr.set(target)
       if (purr.level() > 0.2) {
         if (stats.purrSec === 0) hooks.onTrack('purr_start')
+        if (stats.purrSec < 30 && stats.purrSec + dt >= 30) hooks.onTrack('purr_30')
         stats.purrSec += dt
       }
       hiss?.set((maxSpeed / cat.HW) * (125 / 900))

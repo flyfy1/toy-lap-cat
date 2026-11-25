@@ -1,7 +1,19 @@
 // The cat-tax receipt: a 1080 x 1350 till receipt lying on the blanket, with a snapshot of the cat.
 
-import { locale, t } from './i18n'
+import { locale, t, type Locale } from './i18n'
 import type { CatStats } from './game'
+import { landing } from './share'
+import { drawQr } from './card'
+import { shareUrl } from './cards'
+
+/** A recipient covering the shift gets one more row: the receipt they send back. */
+const COVER: Record<Locale, [string, string]> = {
+  en: ['Cover staff', 'yes'],
+  'zh-CN': ['代班铲屎官', '是'],
+  es: ['Personal de guardia', 'sí'],
+  fr: ['Remplaçant', 'oui'],
+  ja: ['代理の下僕', 'はい'],
+}
 
 const W = 1080
 const H = 1350
@@ -58,7 +70,7 @@ export function drawReceipt(snap: HTMLCanvasElement, s: CatStats, rating: number
   // the cat, as it is right now
   const pad = 44
   const iw = pw - pad * 2
-  const ih = Math.min(400, (iw * snap.height) / snap.width)
+  const ih = Math.min(360, (iw * snap.height) / snap.width)
   const sw = (snap.width * ih) / snap.height
   c.save()
   const clip = new Path2D()
@@ -122,6 +134,7 @@ export function drawReceipt(snap: HTMLCanvasElement, s: CatStats, rating: number
   row(t('tax_biscuits'), nf.format(s.biscuits))
   row(t('tax_traps'), nf.format(s.traps))
   row(t('tax_swats'), nf.format(s.swats))
+  if (landing.recipient) row(...COVER[locale])
   y -= 14
   rule(y)
   y += 60
@@ -131,18 +144,13 @@ export function drawReceipt(snap: HTMLCanvasElement, s: CatStats, rating: number
   c.fillText(`“${ratingLabel(rating)}”`, pw / 2, y - 6)
   y += 34
   rule(y)
-  // barcode and footer
-  y += 30
-  let x = pad + 90
-  let k = 7
-  while (x < pw - pad - 90) {
-    k = (k * 1103515245 + 12345) & 0x7fffffff
-    const bw = 2 + (k % 4) * 2
-    c.fillRect(x, y, bw, 52)
-    x += bw + 3 + ((k >> 4) % 3) * 2
-  }
+  // a real QR code where the barcode was, and the address beside it
+  const qs = Math.max(120, Math.min(170, ph - 48 - (y + 26)))
+  drawQr(c, shareUrl('purr', 'q'), pad + 20, y + 22, qs, INK)
+  c.textAlign = 'left'
   c.font = `700 30px ${MONO}`
-  c.fillText('purr.integ.life', pw / 2, Math.min(ph - 40, y + 98))
+  c.fillText('purr.integ.life', pad + 20 + qs + 30, y + 22 + qs / 2 + 10)
+  c.textAlign = 'center'
   c.restore()
   return cv
 }

@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { applyMeta, t, type Key } from './i18n'
 import { startAnalytics, track } from './analytics'
-import { COATS, type Coat, catFromUrl, parseName, stats as shareStats, syncCatToUrl, trackLanding, trackShare } from './share'
+import { COATS, type Coat, catFromUrl, landing, parseName, stats as shareStats, syncCatToUrl, trackLanding } from './share'
 import { Hint } from './components/Hint'
 import { MoreMenu, pillClass } from './components/MoreMenu'
-import { IconClose, IconShare } from './components/Icons'
-import { IconPaw, IconReceipt, IconSave, IconSpeaker } from './components/CatIcons'
+import { IconPaw, IconReceipt, IconSpeaker } from './components/CatIcons'
 import { startGame, type CatStats, type GameApi } from './game'
 import { applyCoat } from './cat/palette'
 import { audio } from './engine/AudioEngine'
@@ -14,6 +13,8 @@ import { haptic } from './engine/juice'
 const OG = new URLSearchParams(location.search).get('og') === '1'
 /** a mouse (or trackpad): petting needs the button held, so the hint says so */
 const MOUSE = matchMedia('(pointer: fine)').matches
+/** recipients only: the tag loads on demand, so the first load stays as it was */
+const PurrTag = lazy(() => import('./components/PurrTag'))
 const SWATCH: Record<Coat, string> = { tabby: '#8A7360', orange: '#D98B4A', tux: '#2B2522', void: '#121014' }
 
 /** The monologue: one line under the cat, cross-faded. */
@@ -62,7 +63,6 @@ export default function App() {
       return false
     }
   })
-  const [receipt, setReceipt] = useState<{ url: string; blob: Blob | null } | null>(null)
   const urlTimer = useRef<number | undefined>(undefined)
   const gaTimer = useRef<number | undefined>(undefined)
 
@@ -117,7 +117,11 @@ export default function App() {
         onAsleep(a) {
           document.title = a ? t('title_asleep', { name: nameRef.current || t('name_purr') }) : baseTitle.current
         },
-        onTrack: (e, p) => track(e, p),
+        onTrack: (e, p) => {
+          // the peaks: the first belly trap, 30 s of purring (the receipt is offered as the slip)
+          if (e === 'purr_30' || (e === 'belly_trap' && p?.n === 1)) receipt(false)
+          if (e !== 'purr_30') track(e, p)
+        },
       },
       statsRef.current,
     )
@@ -153,34 +157,10 @@ export default function App() {
     track('coat_set', { coat: c })
   }
 
-  const openReceipt = async () => {
+  // the receipt (drawn on demand, with the share sheet): `open` from the 猫税 button, a slip at a peak
+  const receipt = (open: boolean) => {
     const g = api.current
-    if (!g) return
-    const r = g.rating()
-    const snap = g.snapshot()
-    // the receipt renderer is loaded on demand (keeps the first load small)
-    const { drawReceipt } = await import('./receipt')
-    const cv = drawReceipt(snap, g.stats, r, nameRef.current)
-    track('share_open', { from: 'receipt', card: 1, traps: g.stats.traps, rating_x10: Math.round(r * 10) })
-    const url = cv.toDataURL('image/png')
-    setReceipt({ url, blob: null })
-    cv.toBlob((b) => b && setReceipt((x) => (x && x.url === url ? { url, blob: b } : x)), 'image/png')
-  }
-  const file = () => (receipt?.blob ? new File([receipt.blob], 'cat-tax.png', { type: 'image/png' }) : null)
-  const canShareFile = () => {
-    const f = file()
-    return !!(f && navigator.canShare?.({ files: [f] }))
-  }
-  const shareReceipt = async () => {
-    const f = file()
-    if (!f) return
-    trackShare('method', 'file', 'receipt')
-    try {
-      await navigator.share({ files: [f], title: t('tax_title'), text: 'purr.integ.life' })
-      trackShare('done', 'file', 'receipt')
-    } catch {
-      /* cancelled */
-    }
+    if (g) import('./purrShare').then((m) => m.receipt(g, nameRef.current, open), () => {})
   }
 
   if (OG)
@@ -247,36 +227,16 @@ export default function App() {
         </button>
       </div>
       <div className="fixed bottom-3 left-3 z-20 select-none" onPointerDown={(e) => e.stopPropagation()}>
-        <button type="button" onClick={openReceipt} className={pillClass('purr')}>
+        <button type="button" onClick={() => receipt(true)} className={pillClass('purr')}>
           <IconReceipt />
           {t('tax_button')}
         </button>
       </div>
       <MoreMenu current="purr" />
-      {receipt && (
-        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-[#2a1f17]/70 p-4" onPointerDown={(e) => e.stopPropagation()} onClick={() => setReceipt(null)}>
-          <img src={receipt.url} alt={t('tax_title')} className="max-h-[78vh] max-w-full rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
-          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-            {canShareFile() && (
-              <button type="button" onClick={shareReceipt} className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
-                <span className="inline-flex items-center gap-2"><IconShare />{t('tax_share')}</span>
-              </button>
-            )}
-            <a
-              href={receipt.url}
-              download="cat-tax.png"
-              onClick={() => {
-                trackShare('method', 'save', 'receipt')
-                trackShare('done', 'save', 'receipt')
-              }}
-              className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
-              <span className="inline-flex items-center gap-2"><IconSave />{t('tax_save')}</span>
-            </a>
-            <button type="button" onClick={() => setReceipt(null)} aria-label="Close" className="rounded-full border border-[#FFF8EE]/40 px-3.5 py-2 text-sm text-[#FFF8EE]">
-              <IconClose />
-            </button>
-          </div>
-        </div>
+      {landing.recipient && (
+        <Suspense fallback={null}>
+          <PurrTag name={parseName(initial.name)} />
+        </Suspense>
       )}
     </>
   )
