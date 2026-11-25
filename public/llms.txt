@@ -1,0 +1,61 @@
+# Lap Cat
+
+> A sleepy cat on a blanket. Stroke its fur and it leans in, slow-blinks and purrs, with sound and, on Android, a purr you can feel. The belly is a trap. A tiny cozy toy, no sign-up.
+
+Lap Cat (云撸猫 (zh-CN), Gato Mimoso (es), Chat Câlin (fr), なでなで猫 (ja)) is a free browser toy at https://purr.integ.life/ by Integ Life. It opens straight into play: no sign-up, no download, no ads, no tutorial. It works with a mouse or a touchscreen on phones, tablets and computers.
+
+## How to play
+
+1. Stroke the cat with your finger or mouse (on a computer, just move the mouse over it). The fur combs flat along your stroke, and ruffles if you go against it.
+2. The chin, the cheeks, behind the ears and the top of the head are the best spots: the cat leans in, closes its eyes and purrs. Stroking the back the way the fur grows is good too. Tap once to turn on the sound; on Android you also feel the purr through the finger touching the cat.
+3. It dislikes having its tail and paws touched and its fur stroked the wrong way, and it gets tired of the same spot after a while. Ears go back, then flat, the tail thumps and the purr stops: that is the warning before a swat.
+4. Keep it happy and it starts kneading the blanket ("making biscuits"). Pause while it is blissed out and it rolls over to show the belly. Touching it is a trap most of the time (paws grab, back feet kick), but about one time in six the belly rub is allowed.
+5. Leave it alone and it grooms, yawns and falls asleep. Ignore it for 20 seconds and it may push the glass off the blanket. The line under the cat is its review of your work as staff; "Cat tax" makes a receipt card to save or share.
+6. Give your cat a name and a coat (tabby, orange, tuxedo or black) with the paw button. They are added to the page link (?n=...&c=...), so a friend who opens it meets the same cat.
+
+## Facts
+
+- URL: https://purr.integ.life/
+- Price: free
+- Platforms: any modern web browser (desktop and mobile)
+- Languages: English, 简体中文 (Simplified Chinese), Español, Français and 日本語 (Japanese), picked from the browser language (default English)
+- Sound: synthesised live with the Web Audio API; vibration on Android
+- Made by: Integ Life (https://integ.life/), first published 2026-11-25
+
+## FAQ
+
+**Can I pet a cat online for free?**
+Yes. Lap Cat is a free browser toy at purr.integ.life. Open it and stroke the cat with your finger or mouse; there is nothing to install and no account.
+
+**Does the cat really purr and vibrate?**
+Yes. Petting the head, cheeks or chin starts a purr that follows the cat's breathing. On Android phones the purr is also sent to the vibration motor, so you feel it through the finger that is touching the cat. iPhone browsers do not support web vibration.
+
+**Why did the cat grab my hand when I rubbed its belly?**
+Because the belly is a trap, as with many real cats. When it rolls over, touching the belly usually ends in a paw grab and bunny kicks. About one time in six it allows the belly rub. Nothing is lost either way; it lets go when you lift your finger.
+
+**Where does the cat like to be petted?**
+Chin, cheeks and the top of the head are best, and stroking the back in the direction of the fur. It dislikes its tail and paws being touched and fur stroked the wrong way. If you pet the same spot for too long it warns you with a twitching tail and flat ears before it swats.
+
+**Is Lap Cat free?**
+Yes. It is free, with no sign-up, no download and no ads. It runs in any modern browser on phones, tablets and computers.
+
+**Does it have sound and vibration?**
+Yes. The purr is synthesised live in the browser with the Web Audio API and follows the cat's breathing; there are no audio files to load (an optional recorded purr, public domain, only loads with ?purr=rec). On Android phones the purr is also felt as vibration while your finger is on the cat, and there is a sound on/off button; iPhone browsers do not support web vibration.
+
+**Which languages does it support?**
+English, 简体中文 (Simplified Chinese), Español, Français and 日本語 (Japanese). The language is picked automatically from your browser settings; any other language falls back to English.
+
+**Who made it?**
+Integ Life (integ.life). Lap Cat is one of six small stress-relief toys, together with Charge Burst, Void Harvest, Glass Smash, Chain Pop, Knock on Wood. More games are at games.integ.life.
+
+**Is any personal data collected?**
+No account and no personal data. At most, anonymous usage statistics (page views and play counts) are collected.
+
+## Related
+
+- [Charge Burst](https://charge.integ.life/): Hold to charge a glowing energy core, release to detonate it.
+- [Void Harvest](https://void.integ.life/): Your cursor is a black hole: swallow a screen full of jittery shapes.
+- [Glass Smash](https://smash.integ.life/): Smash a pane of glass with the word you hate written on it.
+- [Chain Pop](https://pop.integ.life/): Pop neon bubbles, then set off a full-screen chain reaction.
+- [Knock on Wood](https://knock.integ.life/): Tap a wooden fish. Merit +1.
+- [Integ Games](https://games.integ.life/): more browser games

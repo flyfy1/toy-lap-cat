@@ -1,0 +1,40 @@
+{
+  "name": "Lap Cat · integ.life",
+  "short_name": "Lap Cat",
+  "description": "A sleepy cat on a blanket. Stroke its fur and it leans in, slow-blinks and purrs, with sound and, on Android, a purr you can feel. The belly is a trap. A tiny cozy toy, no sign-up.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#E9D8C3",
+  "theme_color": "#E9D8C3",
+  "categories": [
+    "games",
+    "entertainment",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
