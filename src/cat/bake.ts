@@ -243,7 +243,14 @@ export class Baker {
       // inner ear: pink cup drawn as part of the underlay (no fur over it, tufts added later)
       if (def.noFur && (def.id === 'earL' || def.id === 'earR')) this.innerEar(sp)
       c.restore()
-      if (!this.o.fur) sp.finished = true
+      if (!this.o.fur) {
+        if (def.decorate) {
+          c.save()
+          def.decorate(c)
+          c.restore()
+        }
+        sp.finished = true
+      }
     })
   }
 

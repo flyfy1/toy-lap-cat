@@ -365,7 +365,7 @@ export class Cat {
       c.stroke(p)
       c.restore()
     }
-    fold(r.x0 + (r.x1 - r.x0) * 0.42, r.y1 + 4, r.x1 + 4, r.y0 + (r.y1 - r.y0) * 0.62, r.x0 + (r.x1 - r.x0) * 0.86, r.y1 - (r.y1 - r.y0) * 0.1, 0.2 * HW, 0.3)
+    fold(r.x0 + (r.x1 - r.x0) * 0.42, r.y1 + 4, r.x1 + 4, r.y0 + (r.y1 - r.y0) * 0.62, r.x0 + (r.x1 - r.x0) * 0.86, r.y1 - (r.y1 - r.y0) * 0.1, 0.22 * HW, 0.38)
     fold(r.x0 - 4, r.y0 + (r.y1 - r.y0) * 0.3, r.x0 + (r.x1 - r.x0) * 0.32, r.y0 - 4, r.x0 + (r.x1 - r.x0) * 0.1, r.y0 + (r.y1 - r.y0) * 0.08, 0.12 * HW, 0.14)
     // light from the top left across the rug
     const rg = c.createLinearGradient(r.x0, r.y0, r.x1, r.y1)

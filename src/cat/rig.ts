@@ -546,7 +546,7 @@ export function buildRig(o: RigOpts): PartDef[] {
     id,
     bbox: id === 'legNear' ? [-1.0, -0.15, -0.12, 0.6] : [-0.75, 0.12, 0.08, 0.78],
     path: (c) => {
-      sweep(c, cv, (u) => (0.14 - 0.03 * u) * s, () => 0, 24)
+      sweep(c, cv, (u) => (0.14 - 0.055 * u) * s, () => 0, 24)
       pawPath(c, paw.x, paw.y, paw.a, s)
     },
     toCat: ident,
@@ -621,43 +621,63 @@ export function buildRig(o: RigOpts): PartDef[] {
       return { w, s: st * (1 - w), tone: 1 }
     },
   }
+  // heel (under the haunch) -> ankle, then a round paw bulb with toe bumps pointing forward
   const footCv = new Curve([
     [FOOT.hx, FOOT.hy],
-    [(FOOT.hx + FOOT.tx) / 2, (FOOT.hy + FOOT.ty) / 2 + 0.01],
-    [FOOT.tx, FOOT.ty],
+    [(FOOT.hx + FOOT.tx) / 2 + 0.04, (FOOT.hy + FOOT.ty) / 2 + 0.01],
+    [FOOT.tx + 0.06, FOOT.ty],
   ])
   const footA = Math.atan2(FOOT.ty - FOOT.hy, FOOT.tx - FOOT.hx)
+  const PX = FOOT.tx
+  const PY = FOOT.ty + 0.005
+  const toes: V2[] = [
+    [PX - 0.1, PY - 0.05],
+    [PX - 0.115, PY + 0.005],
+    [PX - 0.095, PY + 0.06],
+  ]
   const footNear: PartDef = {
     id: 'footNear',
-    bbox: [FOOT.tx - 0.22, FOOT.hy - 0.2, FOOT.hx + 0.2, FOOT.ty + 0.2],
+    bbox: [FOOT.tx - 0.26, FOOT.hy - 0.2, FOOT.hx + 0.2, FOOT.ty + 0.2],
     path: (c) => {
-      sweep(c, footCv, (u) => 0.1 + 0.03 * u, () => 0, 20)
-      // round toes at the front
-      for (let k = 0; k < 3; k++) circ(c, FOOT.tx - 0.09, FOOT.ty - 0.06 + k * 0.055, 0.055)
+      sweep(c, footCv, (u) => 0.1 - 0.02 * u, () => 0, 20)
+      ell(c, PX, PY, 0.12, 0.105, -0.1)
+      for (const [x, y] of toes) circ(c, x, y, 0.052)
     },
     toCat: ident,
     R: 0.1,
     fringe: 0.7,
+    ao: [[PX + 0.13, PY - 0.02, 0.07, 0.22]],
     decorate(c) {
+      // creases between the toes
       c.save()
       c.lineCap = 'round'
-      c.strokeStyle = 'rgba(120,105,90,0.4)'
+      c.strokeStyle = 'rgba(120,105,90,0.45)'
       c.lineWidth = 0.009
       c.beginPath()
       for (let k = 0; k < 2; k++) {
-        const y0 = FOOT.ty - 0.027 + k * 0.05
-        c.moveTo(FOOT.tx - 0.07, y0)
-        c.lineTo(FOOT.tx - 0.13, y0 + 0.002)
+        const [ax, ay] = toes[k]
+        const [bx, by] = toes[k + 1]
+        const mx = (ax + bx) / 2
+        const my = (ay + by) / 2
+        c.moveTo(mx - 0.035, my)
+        c.lineTo(mx + 0.035, my + 0.003)
       }
       c.stroke()
       c.restore()
     },
-    flow: (x, y) => footA + 0.12 * n1(x * 10, y * 10) + (y > FOOT.ty + 0.04 ? 0.4 : 0),
-    len: () => 0.032,
+    flow: (x, y) => {
+      if (Math.hypot(x - PX, y - PY) < 0.15) return Math.PI + 0.1 * Math.sign(y - PY) + 0.15 * n1(x * 10, y * 10)
+      return footA + 0.12 * n1(x * 10, y * 10)
+    },
+    len: (x) => (x < PX + 0.1 ? 0.03 : 0.045),
     jitter: () => 12 * D2R,
-    pat: () => ({ w: 1, s: 0, tone: 1 }),
+    pat(x, y) {
+      // a white sock on the paw; the shaft toward the heel is tabby
+      const nz = n2(x * 8, y * 8)
+      const w = smoothstep(PX + 0.2, PX + 0.12, x + 0.03 * nz)
+      return { w, s: 0, tone: 0.92 }
+    },
   }
-
   // ---- tail ----
   const tailDef = (id: 'tailA' | 'tailB', u0: number, u1: number): PartDef => ({
     id,
