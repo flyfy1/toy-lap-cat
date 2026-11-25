@@ -109,8 +109,10 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
       const sp = (6 * k * (1 - k)) / (t1 - t0) / 0.01 + 1e-6
       return { x: a.x, y: a.y, vx: (b.x - a.x) * sp, vy: (b.y - a.y) * sp }
     }
-    return lane(-2.7, -1.95, 0.8, 0.2, 0.52) ?? seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ?? lane(-0.95, -0.05, 0.14, 0.86, 0.25)
+    return lane(-2.7, -1.95, 0.7, 0.12, 0.3) ?? seg(-1.75, -1.15, headPt(0.02, -0.02), headPt(0.06, -0.4)) ?? lane(-0.95, -0.05, 0.1, 0.68, 0.2)
   }
+
+  dbg.scripted = scripted
 
   // ---------- input ----------
   const ptrs = new Map<number, Ptr>()
@@ -333,6 +335,8 @@ export function startGame(canvas: HTMLCanvasElement, onFirst: () => void): GameA
     if (!dbg.firstPaintMs) {
       dbg.firstPaintMs = performance.now()
     }
+    // all part sprites exist (stand-ins at least): the cat is fully drawn and every part is pettable
+    if (!dbg.allPartsMs && cat.baker.sprites.size === cat.defs.length) dbg.allPartsMs = performance.now()
     if (cat.baker.done && dbg.prepareAt === undefined) {
       // create the (suspended) audio context once the bake is done, so the first touch only resumes it
       dbg.prepareAt = 0

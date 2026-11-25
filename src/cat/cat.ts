@@ -41,6 +41,21 @@ export interface CatOpts {
 /** resting eye openness: sleepy-content, upper lid about 45 % down */
 const REST_LID = 0.5
 
+/** flat stand-in colours for parts whose sprite is not built yet */
+const FLAT: Record<PartId, string> = {
+  tailA: '#7E6B57',
+  tailB: '#7E6B57',
+  torso: '#857160',
+  thigh: '#7E6B57',
+  footNear: '#E6DED2',
+  legFar: '#E6DED2',
+  chest: '#ECE5DA',
+  legNear: '#ECE5DA',
+  earL: '#7E6B57',
+  earR: '#7E6B57',
+  head: '#857160',
+}
+
 const TUFT_PARTS: PartId[] = ['head', 'torso', 'thigh']
 const HIT_ORDER: PartId[] = ['head', 'earL', 'earR', 'legNear', 'chest', 'legFar', 'tailB', 'footNear', 'thigh', 'torso', 'tailA']
 
@@ -199,8 +214,9 @@ export class Cat {
   /** Rug rectangle in css px: a rounded knit patch under the cat, extending a little more in front. */
   rugRect(w: number, h: number) {
     const HW = this.HW
-    const cx = this.ox + HW * -0.12
-    const rw = Math.min(w * 1.02, HW * 3.8)
+    const rw = Math.min(w * 0.96, HW * 3.8)
+    // under the cat, but never off the screen edges
+    const cx = Math.max(rw / 2 + w * 0.02, Math.min(w - rw / 2 - w * 0.02, this.ox + HW * -0.12))
     // stays clear of the hint line at the bottom
     const y0 = Math.max(h * 0.02, this.oy - HW * 1.42)
     const y1 = Math.min(h - 100, this.oy + HW * 1.78)
@@ -606,7 +622,7 @@ export class Cat {
     this.happy.step(happy, dt)
     // noticing: the eyes open wide when a finger first appears, then settle back to sleepy
     if (pointer || this.finger.on) {
-      if (this.t - this.ptrSeenAt > 1.5) this.noticeT = 0
+      if (this.t - this.ptrSeenAt > 1.5 && this.bliss < 0.4) this.noticeT = 0
       this.ptrSeenAt = this.t
     }
     let notice = 0
@@ -716,7 +732,17 @@ export class Cat {
     if (this.blanket) ctx.drawImage(this.blanket, 0, 0)
     this.matchedThisFrame = false
     const sprite = (id: PartId) => {
-      if (!this.has(id)) return null
+      if (!this.has(id)) {
+        // not built yet (first frames, or right after a rebake): a flat silhouette in the coat colour
+        const def = this.defs.find((d) => d.id === id)!
+        const m = mul(dev, this.partM(id))
+        ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5])
+        ctx.fillStyle = FLAT[id]
+        ctx.beginPath()
+        def.path(ctx)
+        ctx.fill()
+        return id === 'head' ? m : null
+      }
       const sp = this.sprite(id)
       const m = mul(dev, this.partM(id))
       ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5])
@@ -767,7 +793,7 @@ export class Cat {
     sprite('earR')
     const hm = sprite('head')
     if (!hm) return
-    timed('head', hm)
+    if (this.has('head')) timed('head', hm)
     ctx.setTransform(hm[0], hm[1], hm[2], hm[3], hm[4], hm[5])
     const px = 1 / this.HW
     drawFace(ctx, this.face, px)
