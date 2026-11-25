@@ -76,6 +76,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   const tStart = performance.now()
   const ctx = canvas.getContext('2d', { alpha: false })!
   const cat = new Cat({ seed, fur })
+  cat.bones = q.get('bones') === '1'
+  cat.noTufts = q.get('tufts') === '0'
   let w = 0
   let h = 0
   let dpr = 1
@@ -122,14 +124,25 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   if (pose === 'belly' || pose === 'trap') {
     cat.bliss = 1
     cat.belly = pose === 'trap' ? 'trap' : 'invite'
+    cat.openP = 1
     cat.roll.x = 1
-    cat.footRot.x = -25 * (Math.PI / 180)
     if (pose === 'trap') {
-      cat.kickT = 0.25
-      cat.kicksLeft = 9
-      cat.lastKickAt = 0
+      cat.trapAt = cat.toCat(catPt(0.1, 0.36).x, catPt(0.1, 0.36).y)
+      cat.startTrap(9)
     }
   }
+  // the invite transition played from the rest pose (and, with &trap=1, a finger landing at t = 1.0)
+  const inviteTrap = pose === 'invite' && q.get('trap') === '1'
+  if (pose === 'invite') {
+    cat.bliss = 1
+    cat.belly = 'invite'
+    cat.bellyCool = 1e9
+    cat.forceTrap = inviteTrap
+    // the face already in its bliss state at t = 0 (in play the pupils widen during the stroking before)
+    cat.face.pupilSize = 0.81
+  }
+  if (pose === 'paw') cat.pawHoldForce = true
+  if (pose === 'idle') cat.idleShiftAt = 0.5
   if (pose === 'irk') cat.irk = 0.78
   if (pose === 'swat') cat.irk = 1
   if (pose === 'knead') {
@@ -142,7 +155,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   }
   if (pose === 'yawn') cat.yawnT = 0
   if (pose === 'glass') cat.idleT = 19.5
-  const POSED = ['sleep', 'stretch', 'belly', 'trap', 'irk', 'swat', 'knead', 'groom', 'yawn', 'glass'].includes(pose)
+  const POSED = ['sleep', 'stretch', 'belly', 'trap', 'irk', 'swat', 'knead', 'groom', 'yawn', 'glass', 'invite', 'paw', 'idle'].includes(pose)
   if (POSED) {
     // no surprise slow blinks or grooming in a posed screenshot
     cat.restSlowAt = 1e9
@@ -158,6 +171,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
       return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r * 0.6, vx: -Math.sin(a) * r * 5, vy: Math.cos(a) * r * 3 }
     }
     if (pose === 'trap' || pose === 'belly') return pose === 'trap' ? { ...catPt(0.1, 0.36), vx: 0, vy: 0 } : null
+    if (inviteTrap) return t >= 1.0 && t < 3.2 ? { ...catPt(0.1, 0.36), vx: 0, vy: 0 } : null
+    if (pose === 'paw') return t > 0.2 ? { ...catPt(-0.84, 0.2), vx: 0, vy: 0 } : null
     if (pose === 'swat') return { ...headPt(-0.3, 0.3), vx: 0, vy: 0 }
     if (pose === 'irk') {
       // fur stroked the wrong way, over and over
@@ -644,6 +659,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
       dbg.tufts = cat.tuftCount
     }
     dbg.fps = fps
+    dbg.boneDev = cat.boneDevMax
+    dbg.slices = cat.slices
     dbg.matchMs = cat.matchMs
     dbg.workMs = workMs
     dbg.tuftMs = cat.tuftMs
@@ -653,6 +670,17 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
     dbg.purr = purr ? { mode: purr.mode, level: purr.level(), phase: purr.phase() } : null
   }
   const stop = runLoop(frame)
+  /** step the sim by dt seconds in 1/60 s steps and redraw (60 fps clips from a frozen page) */
+  dbg.advance = (dt: number) => {
+    let r = dt
+    while (r > 1e-6) {
+      const h = Math.min(1 / 60, r)
+      step(h, performance.now())
+      r -= h
+    }
+    cat.draw(ctx, true)
+    dbg.boneDev = cat.boneDevMax
+  }
   dbg.stats = stats
 
   return {

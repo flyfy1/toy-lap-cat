@@ -78,11 +78,9 @@ export function shareUrl(toy: ToyId): string {
 }
 
 export function shareText(toy: ToyId): string {
-  if (toy === 'smash' && stats.words?.length) return t('share_smash_words', { w: stats.words.join(', ') })
-  if (toy === 'knock' && stats.words?.length) return t('share_knock_words', { w: stats.words.join(', ') })
   if (toy === 'purr' && stats.name) return t('share_purr_name', { name: stats.name })
-  if (toy !== 'smash' && stats.n) return t(`share_${toy}_stat`, { n: stats.n })
-  return t(`share_${toy}`)
+  if (toy !== 'smash' && stats.n) return t(`share_${toy}_stat` as 'share_purr_stat', { n: stats.n })
+  return t(`share_${toy}` as 'share_purr')
 }
 
 export interface Network {

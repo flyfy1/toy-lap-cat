@@ -2,10 +2,10 @@
 // ~1,600 tufts redrawn every frame that read it (combed direction, flattening, sleek or ruffled tone).
 
 import type { Field } from './field'
-import { lightAt, coat } from './bake'
+import { clumpAt, lightAt, coat } from './bake'
 import { mulberry32, smoothstep } from './noise'
 import { RAMPS, type RGB, css, family } from './palette'
-import type { Mat, PartDef } from './rig'
+import { type Mat, type PartDef, apply } from './rig'
 
 const lumOf = (c: [number, number, number]) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11
 
@@ -264,6 +264,26 @@ export class TuftLayer {
         if (def.noFur?.(px, py) || exclude(px, py)) continue
         const pt = def.pat(px, py)
         const fam = family(pt.w, pt.s)
+        // same clumps as the baked coat
+        const cl = clumpAt(def, px, py, def.id.length)
+        const ang0 = def.flow(px, py) + cl.dOff
+        const len0 = def.len(px, py) * cl.lenF
+        // no dark tuft may reach onto white: neither the white of its own coat pattern nor a lighter part
+        // below it (the white belly under the haunch). Tested at the ruffled length (x1.4).
+        // the haunch's edge overlaps the white belly in most poses: its live edge tufts stay off (the baked
+        // fringe is enough there), or they read as dark needles over white
+        if (def.id === 'thigh' && d < 0.1 && fam !== 2) continue
+        if (fam !== 2 && pt.w < 0.5) {
+          const tx = px + Math.cos(ang0) * len0 * 1.4
+          const ty = py + Math.sin(ang0) * len0 * 1.4
+          if (field.sample(tx, ty) > 0.005) {
+            if (def.pat(tx, ty).w > 0.35) continue
+          } else if (def.under) {
+            const [ux, uy] = apply(def.toCat, tx, ty)
+            const below = def.under(ux, uy)
+            if (below && below[0] * 0.3 + below[1] * 0.59 + below[2] * 0.11 > 170) continue
+          }
+        }
         const L = lightAt(def, field, px, py)
         const col = coat(pt.w, pt.s, pt.tone, 1, 0.5)
         const target = lumOf(col) * Math.pow(L, 0.75)
@@ -280,11 +300,11 @@ export class TuftLayer {
         this.tufts.push({
           x: px,
           y: py,
-          ang: def.flow(px, py) + (rnd() * 2 - 1) * def.jitter(px, py),
-          len: def.len(px, py) * (0.8 + rnd() * 0.4),
+          ang: ang0 + ((rnd() * 2 - 1) * def.jitter(px, py)) / 3,
+          len: len0 * (0.9 + rnd() * 0.2),
           fam,
           step: best + (rnd() - 0.5) * 0.6,
-          jit: rnd() * 2 - 1,
+          jit: Math.sign(cl.bend) * (0.5 + 0.5 * rnd()),
           q: groom.index(px, py),
         })
       }
@@ -431,7 +451,7 @@ export class TuftLayer {
     }
     ctx.save()
     ctx.lineCap = 'round'
-    ctx.lineWidth = 0.013 * unitPx
+    ctx.lineWidth = 0.0105 * unitPx
     ctx.globalAlpha = 0.5
     for (let k = 0; k < 15; k++) {
       if (!used[k]) continue
@@ -440,7 +460,7 @@ export class TuftLayer {
       ctx.strokeStyle = css(this.ramps[fam][Math.max(0, s - 1)])
       ctx.stroke(base[k])
     }
-    ctx.lineWidth = 0.008 * unitPx
+    ctx.lineWidth = 0.0065 * unitPx
     ctx.globalAlpha = 0.9
     for (let k = 0; k < 15; k++) {
       if (!used[k]) continue

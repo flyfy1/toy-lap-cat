@@ -4,6 +4,7 @@ import { startAnalytics, track } from './analytics'
 import { COATS, type Coat, catFromUrl, parseName, stats as shareStats, syncCatToUrl } from './share'
 import { Hint } from './components/Hint'
 import { MoreMenu, pillClass } from './components/MoreMenu'
+import { IconClose, IconPaw, IconReceipt, IconSave, IconShare, IconSpeaker } from './components/Icons'
 import { startGame, type CatStats, type GameApi } from './game'
 import { applyCoat } from './cat/palette'
 import { audio } from './engine/AudioEngine'
@@ -20,7 +21,7 @@ function Line({ k, y }: { k: { key: Key; id: number } | null; y: number }) {
     if (cur.current && k && cur.current.id !== k.id) setPrev(cur.current)
     cur.current = k
   }, [k])
-  const cls = 'pointer-events-none fixed inset-x-0 z-10 px-6 text-center text-[13px] leading-5 text-[#4A3A2C]/70'
+  const cls = 'pointer-events-none fixed inset-x-0 z-10 mx-auto max-w-[30ch] px-2 text-center font-[ui-rounded,system-ui,sans-serif] text-[15px] leading-[22px] text-[#4A3A2C]/80'
   return (
     <>
       {prev && (
@@ -204,8 +205,9 @@ export default function App() {
         </a>
       )}
       <div className="fixed left-3 top-3 z-20 select-none" onPointerDown={(e) => e.stopPropagation()}>
-        <button type="button" aria-label={t('cat_coat')} onClick={() => setPanel((p) => !p)} className={`${pillClass('purr')} !px-2.5`}>
-          🐾{name ? <span className="ml-1.5">{parseName(name)}</span> : null}
+        <button type="button" aria-label={t('cat_coat')} onClick={() => setPanel((p) => !p)} className={`${pillClass('purr')} ${name ? '' : '!w-11 justify-center !px-0'}`}>
+          <IconPaw />
+          {name ? <span>{parseName(name)}</span> : null}
         </button>
         {panel && (
           <div className="mt-2 w-64 rounded-2xl border border-[#4A3A2C]/15 bg-[#FFF8EE]/90 p-3 text-[#4A3A2C] shadow-lg backdrop-blur-md">
@@ -236,13 +238,14 @@ export default function App() {
         )}
       </div>
       <div className="fixed right-3 top-3 z-20 select-none" onPointerDown={(e) => e.stopPropagation()}>
-        <button type="button" onClick={() => setMuted((m) => !m)} aria-label={muted ? t('sound_off') : t('sound_on')} title={muted ? t('sound_off') : t('sound_on')} className={`${pillClass('purr')} !px-2.5`}>
-          {muted ? '🔇' : '🔊'}
+        <button type="button" onClick={() => setMuted((m) => !m)} aria-label={muted ? t('sound_off') : t('sound_on')} title={muted ? t('sound_off') : t('sound_on')} className={`${pillClass('purr')} !w-11 justify-center !px-0`}>
+          <IconSpeaker off={muted} />
         </button>
       </div>
       <div className="fixed bottom-3 left-3 z-20 select-none" onPointerDown={(e) => e.stopPropagation()}>
         <button type="button" onClick={openReceipt} className={pillClass('purr')}>
-          🧾 {t('tax_button')}
+          <IconReceipt />
+          {t('tax_button')}
         </button>
       </div>
       <MoreMenu current="purr" />
@@ -252,14 +255,14 @@ export default function App() {
           <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
             {canShareFile() && (
               <button type="button" onClick={shareReceipt} className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
-                ↗ {t('tax_share')}
+                <span className="inline-flex items-center gap-2"><IconShare />{t('tax_share')}</span>
               </button>
             )}
             <a href={receipt.url} download="cat-tax.png" className="rounded-full bg-[#FFF8EE] px-4 py-2 text-sm font-semibold text-[#4A3A2C] active:scale-95">
-              ⤓ {t('tax_save')}
+              <span className="inline-flex items-center gap-2"><IconSave />{t('tax_save')}</span>
             </a>
-            <button type="button" onClick={() => setReceipt(null)} className="rounded-full border border-[#FFF8EE]/40 px-3.5 py-2 text-sm text-[#FFF8EE]">
-              ✕
+            <button type="button" onClick={() => setReceipt(null)} aria-label="Close" className="rounded-full border border-[#FFF8EE]/40 px-3.5 py-2 text-sm text-[#FFF8EE]">
+              <IconClose />
             </button>
           </div>
         </div>

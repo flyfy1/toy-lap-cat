@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { t, type ToyId } from '../i18n'
 import { NETWORKS, shareText, shareUrl, stats } from '../share'
 import { track } from '../analytics'
-import { pillClass } from './MoreMenu'
+import { LIGHT_TOYS, pillClass } from './MoreMenu'
+import { IconShare } from './Icons'
 
 const isTouch = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 
@@ -67,7 +68,7 @@ export function ShareButton({ toy }: { toy: ToyId }) {
   return (
     <>
       <button type="button" onClick={start} className={pillClass(toy)}>
-        ↗ {t('share')}
+        {LIGHT_TOYS.includes(toy) ? <><IconShare />{t('share')}</> : <>↗ {t('share')}</>}
       </button>
       {open && (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={() => setOpen(false)}>

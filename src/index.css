@@ -54,7 +54,11 @@ body.about-open #about {
 }
 
 /* Lap Cat monologue: 250 ms cross-fade */
-@keyframes mono-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes mono-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 @keyframes mono-out { from { opacity: 1 } to { opacity: 0 } }
-.mono-in { animation: mono-in 250ms ease-out both; }
+.mono-in { animation: mono-in 300ms ease-out both; }
+/* hint hand: one stroking motion every 2.5 s */
+@keyframes hint-hand { 0%, 55%, 100% { transform: translate(0, 0) rotate(0) } 20% { transform: translate(-5px, 1px) rotate(-8deg) } 40% { transform: translate(5px, 1px) rotate(6deg) } }
+.hint-hand { animation: hint-hand 2.5s ease-in-out infinite; transform-origin: 50% 90%; }
+@media (prefers-reduced-motion: reduce) { .hint-hand { animation: none } }
 .mono-out { animation: mono-out 250ms ease-out both; }

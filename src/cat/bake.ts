@@ -5,7 +5,8 @@
 import { Field } from './field'
 import { clamp01, mulberry32, smoothstep } from './noise'
 import { COAT, P, type RGB, mix, scale } from './palette'
-import { type PartDef, type PartId, apply, earInnerPath as earInner } from './rig'
+export { LIGHT }
+import { type PartDef, type PartId, apply, earInnerPath as earInner, sunAt } from './rig'
 
 export interface Sprite {
   def: PartDef
@@ -45,7 +46,8 @@ export function lightAt(def: PartDef, f: Field, x: number, y: number): number {
     ny -= ((def.bump(x, y + e) - def.bump(x, y - e)) / (2 * e)) * 0.25
   }
   const nl = Math.hypot(nx, ny, 1)
-  const diff = (nx * LIGHT[0] + ny * LIGHT[1] + LIGHT[2]) / nl
+  const Lv = def.light ?? LIGHT
+  const diff = (nx * Lv[0] + ny * Lv[1] + Lv[2]) / nl
   const [cx, cy] = apply(def.toCat, x, y)
   const gg = 1 - 0.22 * smoothstep(-1.4, 1.6, cx * 0.55 + cy * 0.85)
   return Math.max(0.45, Math.min(1.18, (0.52 + 0.6 * Math.max(diff, -0.2)) * gg))
@@ -78,11 +80,53 @@ export function coat(w: number, s: number, tone: number, pass: number, r: number
   return mix(t, scale(wh, 0.5 + 0.5 * Math.min(1.08, tone)), w)
 }
 
+// finer hairs than the first version, about 12 % denser (the bake budget caps it at that)
 const PASSES = [
-  { alpha: 0.5, len: 1.1, w: 0.016, dens: 1300 },
-  { alpha: 0.74, len: 0.9, w: 0.0125, dens: 2500 },
-  { alpha: 0.58, len: 0.6, w: 0.0085, dens: 1900 },
+  { alpha: 0.52, len: 1.1, w: 0.013, dens: 1450 },
+  { alpha: 0.76, len: 0.9, w: 0.0095, dens: 2750 },
+  { alpha: 0.62, len: 0.6, w: 0.0065, dens: 2150 },
 ]
+
+const CLUMP = 0.045
+const hash2 = (i: number, j: number, s: number) => {
+  let h = (i * 374761393 + j * 668265263 + s * 2147483647) | 0
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  h ^= h >>> 16
+  return (h >>> 0) / 4294967296
+}
+/** Fur clumps (spec 5.1): strokes rooted in one 0.045 HW cell share a direction offset, a bend, a length
+ *  factor and a tone; their tips converge a little toward the cell's centre line. */
+type Clump = { dOff: number; bend: number; lenF: number; tone: number; cx: number; cy: number }
+const clumpCache = new WeakMap<PartDef, Map<number, Clump>>()
+export function clumpAt(def: PartDef, x: number, y: number, seed: number): Clump {
+  const i = Math.floor(x / CLUMP)
+  const j = Math.floor(y / CLUMP)
+  let cache = clumpCache.get(def)
+  if (!cache) clumpCache.set(def, (cache = new Map()))
+  const key = (i + 512) * 4096 + (j + 512) + seed * 1e7
+  const hit = cache.get(key)
+  if (hit) return hit
+  const v = makeClump(def, i, j, seed)
+  cache.set(key, v)
+  return v
+}
+function makeClump(def: PartDef, i: number, j: number, seed: number): Clump {
+  const r1 = hash2(i, j, seed)
+  const r2 = hash2(i, j, seed + 7)
+  const r3 = hash2(i, j, seed + 13)
+  const r4 = hash2(i, j, seed + 29)
+  const cx = (i + 0.5) * CLUMP
+  const cy = (j + 0.5) * CLUMP
+  // the bend follows the flow's local curl, so neighbours curve the same way
+  const a0 = def.flow(cx, cy)
+  const e = 0.03
+  const a1 = def.flow(cx + Math.cos(a0) * e, cy + Math.sin(a0) * e)
+  let curl = a1 - a0
+  while (curl > Math.PI) curl -= Math.PI * 2
+  while (curl < -Math.PI) curl += Math.PI * 2
+  const sign = Math.abs(curl) > 0.004 ? Math.sign(curl) : r4 < 0.5 ? -1 : 1
+  return { dOff: (r1 * 2 - 1) * 10 * (Math.PI / 180), bend: sign * (0.1 + 0.1 * r2), lenF: 0.85 + 0.35 * r3, tone: (r4 * 2 - 1) * 0.05, cx, cy }
+}
 
 export interface BakeOpts {
   ppu: number
@@ -195,8 +239,9 @@ export class Baker {
     const res = f.res * SS
     const img = new ImageData(W, H)
     const px = img.data
-    const inset = this.o.fur ? 0.022 : 0
-    const soft = this.o.fur ? 0.012 : 0.004
+    // small parts (toes) take a narrower inset, or their underlay never reaches full alpha
+    const inset = this.o.fur ? (def.inset ?? 0.022) : 0
+    const soft = this.o.fur ? Math.min(0.012, (def.inset ?? 0.022) * 0.6) : 0.004
     const BAND = Math.max(2, Math.ceil(1000 / W))
     for (let r0 = 0; r0 < H; r0 += BAND) {
       const r1 = Math.min(H, r0 + BAND)
@@ -301,15 +346,23 @@ export class Baker {
             if (def.noFur?.(x, y)) continue
             made++
             const pt = def.pat(x, y)
+            const white = pt.w > 0.5
             const L = shadeFor(lightAt(def, f, x, y), pt.w)
-            let a = def.flow(x, y) + (rnd() * 2 - 1) * def.jitter(x, y)
-            let len = def.len(x, y) * pass.len * (0.7 + rnd() * 0.55)
+            const cl = clumpAt(def, x, y, def.id.length)
+            const jit = Math.min(def.jitter(x, y), white ? 16 * (Math.PI / 180) : 9)
+            let a = def.flow(x, y) + cl.dOff + ((rnd() * 2 - 1) * jit) / 3
+            let len = def.len(x, y) * pass.len * cl.lenF * (0.9 + rnd() * 0.2) * (white ? 1.15 : 1)
+            {
+              // tips converge 15 % toward the clump's centre line
+              const o = (x - cl.cx) * -Math.sin(a) + (y - cl.cy) * Math.cos(a)
+              a -= (0.15 * o) / Math.max(len, 0.02)
+            }
             let dx = Math.cos(a)
             let dy = Math.sin(a)
             const edge = d < 0.045
-            if (edge) {
+            const g = edge || d < 0.05 ? f.grad(x, y) : null
+            if (edge && g) {
               // fringe: tips cross the silhouette
-              const g = f.grad(x, y)
               const k = 0.3 * (1 - d / 0.045)
               dx = dx * (1 - k) - g[0] * k
               dy = dy * (1 - k) - g[1] * k
@@ -321,23 +374,51 @@ export class Baker {
               a = Math.atan2(dy, dx)
             }
             const r = rnd()
-            let col = coat(pt.w, pt.s, pt.tone, pi, r)
-            col = scale(col, Math.pow(L, 0.75) * (0.93 + rnd() * 0.14))
+            let col = coat(pt.w, pt.s, pt.tone * (1 + cl.tone), pi, r)
+            if (white) {
+              // white fur: a narrow lightness range, cool shadows instead of beige
+              const k = 0.9 + 0.1 * Math.min(1, Math.pow(L, 0.75) * (0.95 + rnd() * 0.1))
+              col = scale(col, k)
+              const sh = Math.max(0, 1 - L) * 1.4
+              col = mix(col, [213, 210, 208], Math.min(0.6, sh))
+            } else col = scale(col, Math.pow(L, 0.75) * (0.93 + rnd() * 0.14))
+            // sheen along the back (tip pass)
+            if (pi === 2 && def.sheen) col = scale(col, 1 + 0.12 * def.sheen(x, y))
+            // rim light on edges that face the window, a cool bounce on the far side
+            let rim = 0
+            if (g && d < 0.05) {
+              const Lv = def.light ?? LIGHT
+              const ll = Math.hypot(Lv[0], Lv[1]) || 1
+              const face = (-g[0] * Lv[0] - g[1] * Lv[1]) / ll
+              if (face > 0.25) {
+                rim = Math.min(1, (face - 0.25) / 0.5) * (1 - d / 0.05)
+                col = mix(scale(col, 1 + 0.18 * rim), [255, 241, 214], 0.25 * rim)
+              } else if (face < -0.25) col = mix(col, [201, 183, 176], 0.08 * Math.min(1, (-face - 0.25) / 0.5))
+            }
             if (edge) {
-              // soft edge: dark hairs against the light rug read as spikes, so the fringe is lifted
-              // toward a warm mid tone, kept shorter, and drawn see-through (below)
               const lu = col[0] * 0.3 + col[1] * 0.59 + col[2] * 0.11
-              if (lu < 120) {
+              const below = def.under?.(...apply(def.toCat, x + dx * len, y + dy * len))
+              const bl = below ? below[0] * 0.3 + below[1] * 0.59 + below[2] * 0.11 : -1
+              if (below && bl - lu > 60) {
+                // over a lighter part (the white belly): blend toward it and keep it short, no dark needles
+                col = mix(col, below, 0.5)
+                len *= 0.5
+              } else if (lu < 120) {
+                // soft edge against the rug: dark hairs read as spikes, so the fringe is lifted toward a warm mid tone
                 const k = 0.35 * (1 - lu / 120)
                 col = [col[0] + (150 - col[0]) * k, col[1] + (128 - col[1]) * k, col[2] + (104 - col[2]) * k]
                 len *= 0.82
               }
             }
-            const key = ((Math.min(255, col[0]) >> 3) | ((Math.min(255, col[1]) >> 3) << 5) | ((Math.min(255, col[2]) >> 3) << 10)) + (edge ? 1 << 15 : 0)
+            const c6 = white
+            const q = c6 ? 2 : 3
+            const m = c6 ? 63 : 31
+            const key = (((Math.min(255, col[0]) >> q) | ((Math.min(255, col[1]) >> q) << 6) | ((Math.min(255, col[2]) >> q) << 12)) + (c6 ? 1 << 18 : 0) + (edge ? 1 << 19 : 0) + (edge && rim > 0.3 ? 1 << 20 : 0)) * 1
+            void m
             let p = buckets.get(key)
             if (!p) buckets.set(key, (p = new Path2D()))
             const w = pass.w * (0.8 + rnd() * 0.4) * (pi === 2 && pt.w > 0.5 ? 0.9 : 1)
-            const bend = (rnd() * 2 - 1) * 0.25 * len
+            const bend = (cl.bend + (rnd() * 2 - 1) * 0.04) * len
             const px = -dy
             const py = dx
             const tx = x + dx * len
@@ -354,10 +435,11 @@ export class Baker {
           const c = sp.c
           c.save()
           c.globalAlpha = pass.alpha
-          const keys = [...buckets.keys()].sort((ka, kb) => lum(ka & 0x7fff) - lum(kb & 0x7fff))
+          const keys = [...buckets.keys()].sort((ka, kb) => lumKey(ka) - lumKey(kb))
           for (const k of keys) {
-            c.globalAlpha = k >> 15 ? pass.alpha * 0.55 : pass.alpha
-            c.fillStyle = `rgb(${(k & 31) << 3},${((k >> 5) & 31) << 3},${((k >> 10) & 31) << 3})`
+            c.globalAlpha = k & (1 << 19) ? pass.alpha * (k & (1 << 20) ? 0.8 : 0.55) : pass.alpha
+            const [rr, gg, bb] = rgbKey(k)
+            c.fillStyle = `rgb(${rr},${gg},${bb})`
             c.fill(buckets.get(k)!)
           }
           c.restore()
@@ -401,9 +483,46 @@ export class Baker {
     tmp.width = f.w
     tmp.height = f.h
     tmp.getContext('2d')!.putImageData(img, 0, 0)
+    // the sun patch at the part's rest place: a warm wash in the light, a cool veil in the shade
+    const sun = new ImageData(f.w, f.h)
+    const sp2 = sun.data
+    const lkCache = new Map<number, number>()
+    for (let j = 0; j < f.h; j++)
+      for (let i = 0; i < f.w; i++) {
+        const k = (j * f.w + i) * 4
+        if (f.d[j * f.w + i] < -0.08) continue
+        const [cx, cy] = apply(def.toCat, f.x0 + (i + 0.5) / f.res, f.y0 + (j + 0.5) / f.res)
+        const s = sunAt(cx, cy)
+        // a wash over dark fur lifts it toward grey and draws the patch edge as a seam: scale by the fur's lightness
+        // (sampled on a 3x3 pixel grid: the pattern changes slowly and this runs inside the bake budget)
+        const gi = ((i / 3) | 0) + ((j / 3) | 0) * 4096
+        let lk = lkCache.get(gi)
+        if (lk === undefined) {
+          const pt = def.pat(f.x0 + (i + 0.5) / f.res, f.y0 + (j + 0.5) / f.res)
+          const fc = coat(pt.w, pt.s, pt.tone, 1, 0.5)
+          lk = Math.min(1, 0.15 + (0.85 * (fc[0] * 0.3 + fc[1] * 0.59 + fc[2] * 0.11)) / 190)
+          lkCache.set(gi, lk)
+        }
+        if (s > 0.5) {
+          sp2[k] = 255
+          sp2[k + 1] = 228
+          sp2[k + 2] = 188
+          sp2[k + 3] = 255 * 0.2 * (s - 0.5) * 2 * lk
+        } else {
+          sp2[k] = 64
+          sp2[k + 1] = 58
+          sp2[k + 2] = 78
+          sp2[k + 3] = 255 * 0.12 * (0.5 - s) * 2 * lk
+        }
+      }
+    const tmp2 = document.createElement('canvas')
+    tmp2.width = f.w
+    tmp2.height = f.h
+    tmp2.getContext('2d')!.putImageData(sun, 0, 0)
     c.save()
     c.globalCompositeOperation = 'source-atop'
     c.drawImage(tmp, f.x0, f.y0, f.w / f.res, f.h / f.res)
+    c.drawImage(tmp2, f.x0, f.y0, f.w / f.res, f.h / f.res)
     for (const [ax, ay, ar, aa] of def.ao ?? []) {
       const g = c.createRadialGradient(ax, ay, 0, ax, ay, ar)
       g.addColorStop(0, `rgba(45,32,22,${aa})`)
@@ -447,4 +566,12 @@ export class Baker {
   }
 }
 
-const lum = (k: number) => (k & 31) * 0.3 + ((k >> 5) & 31) * 0.59 + ((k >> 10) & 31) * 0.11
+/** colour of a stroke bucket key: 6 bits per channel for white fur (no banding), 5 bits otherwise */
+function rgbKey(k: number): [number, number, number] {
+  const q = k & (1 << 18) ? 2 : 3
+  return [(k & 63) << q, ((k >> 6) & 63) << q, ((k >> 12) & 63) << q]
+}
+const lumKey = (k: number) => {
+  const [r, g, b] = rgbKey(k)
+  return r * 0.3 + g * 0.59 + b * 0.11
+}

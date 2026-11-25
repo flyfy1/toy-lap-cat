@@ -31,9 +31,11 @@ export interface FaceState {
   bite: number
   /** 0..1 tongue out (grooming lick) */
   lick: number
+  /** whisker tip lag per side (head-local HW), from a spring that trails head motion */
+  wtip: [number, number][]
 }
 
-export const restFace = (): FaceState => ({ open: [1, 1], squint: [0, 0], happy: 0, pupil: [0, 0], pupilSize: 0.7, look: 0, padPush: 0, whisk: 0, slit: 0, cross: 0, yawn: 0, bite: 0, lick: 0 })
+export const restFace = (): FaceState => ({ open: [1, 1], squint: [0, 0], happy: 0, pupil: [0, 0], pupilSize: 0.7, look: 0, padPush: 0, whisk: 0, slit: 0, cross: 0, yawn: 0, bite: 0, lick: 0, wtip: [[0, 0], [0, 0]] })
 
 const LID = '#2A211C'
 
@@ -143,16 +145,26 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     ig.addColorStop(1, I[5])
     c.fillStyle = ig
     c.fillRect(cx - 0.2, cy - 0.2, 0.4, 0.4)
-    // faint radial iris fibres
-    c.strokeStyle = 'rgba(70,95,40,0.07)'
-    c.lineWidth = 0.6 * px
+    // radial iris fibres, alternating lengths, and a darker limbal ring
+    c.strokeStyle = 'rgba(60,82,34,0.16)'
+    c.lineWidth = 0.8 * px
     c.beginPath()
-    for (let k = 0; k < 18; k++) {
-      const a = (k / 18) * Math.PI * 2
-      c.moveTo(pxo + Math.cos(a) * 0.05, pyo + Math.sin(a) * 0.05)
-      c.lineTo(pxo + Math.cos(a) * 0.12, pyo + Math.sin(a) * 0.12)
+    for (let k = 0; k < 28; k++) {
+      const a = (k / 28) * Math.PI * 2 + 0.05
+      const r1 = k % 2 ? 0.1 : 0.118
+      c.moveTo(pxo + Math.cos(a) * 0.048, pyo + Math.sin(a) * 0.048)
+      c.lineTo(pxo + Math.cos(a) * r1, pyo + Math.sin(a) * r1)
     }
     c.stroke()
+    {
+      const R = EYE.w * 0.56
+      const lr = c.createRadialGradient(cx, cy, R * 0.86, cx, cy, R)
+      lr.addColorStop(0, 'rgba(52,58,24,0)')
+      lr.addColorStop(0.5, 'rgba(52,58,24,0.3)')
+      lr.addColorStop(1, 'rgba(52,58,24,0.3)')
+      c.fillStyle = lr
+      c.fillRect(cx - R, cy - R, R * 2, R * 2)
+    }
     // pupil
     const pr = (s.pupilSize * h) / 2
     const pg = c.createRadialGradient(pxo, pyo, pr * 0.7, pxo, pyo, pr * 1.08)
@@ -189,16 +201,33 @@ function drawEye(c: CanvasRenderingContext2D, side: -1 | 1, s: FaceState, px: nu
     c.fill()
     c.restore()
 
-    // lid lines: the lower outline thin, the upper lid edge a little heavier
+    // lid lines: the lower lid thin and fading toward the outer corner (no ring round the eye),
+    // a moist highlight along its inner third; the upper lid edge heavier
     c.save()
     c.lineCap = 'round'
     c.lineJoin = 'round'
+    {
+      const lg = c.createLinearGradient(g.ix, g.iy, g.ox, g.oy)
+      lg.addColorStop(0, 'rgba(38,26,20,0.45)')
+      lg.addColorStop(0.6, 'rgba(38,26,20,0.3)')
+      lg.addColorStop(1, 'rgba(38,26,20,0)')
+      c.strokeStyle = lg
+      c.lineWidth = 0.8 * px
+      c.beginPath()
+      c.moveTo(g.ox, g.oy)
+      c.bezierCurveTo(q.b1[0], q.b1[1], q.b2[0], q.b2[1], g.ix, g.iy)
+      c.stroke()
+      const hl = c.createLinearGradient(g.ix, g.iy, g.ox, g.oy)
+      hl.addColorStop(0, 'rgba(255,250,240,0.55)')
+      hl.addColorStop(0.33, 'rgba(255,250,240,0)')
+      c.strokeStyle = hl
+      c.lineWidth = 1 * px
+      c.beginPath()
+      c.moveTo(g.ox, g.oy + 1.2 * px)
+      c.bezierCurveTo(q.b1[0], q.b1[1] + 1.2 * px, q.b2[0], q.b2[1] + 1.2 * px, g.ix, g.iy + 1.2 * px)
+      c.stroke()
+    }
     c.strokeStyle = LID
-    c.lineWidth = 1.05 * px
-    c.beginPath()
-    c.moveTo(g.ox, g.oy)
-    c.bezierCurveTo(q.b1[0], q.b1[1], q.b2[0], q.b2[1], g.ix, g.iy)
-    c.stroke()
     c.lineWidth = (1.5 + 0.3 * (1 - open)) * px
     c.beginPath()
     topEdge(c, g, q)
@@ -256,6 +285,24 @@ export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) 
   c.fillStyle = 'rgba(255,235,228,0.55)'
   c.beginPath()
   c.ellipse(-0.012, ny - nh * 0.2, 0.016, 0.008, -0.2, 0, Math.PI * 2)
+  c.fill()
+  // nostrils: two small commas
+  c.fillStyle = 'rgba(122,62,60,0.75)'
+  for (const sd of [-1, 1]) {
+    c.beginPath()
+    c.ellipse(sd * nw * 0.24, ny + nh * 0.08, 0.009, 0.0045, sd * 0.5, 0, Math.PI * 2)
+    c.fill()
+    c.beginPath()
+    c.moveTo(sd * nw * 0.17, ny + nh * 0.1)
+    c.quadraticCurveTo(sd * nw * 0.3, ny + nh * 0.22, sd * nw * 0.36, ny + nh * 0.04)
+    c.lineWidth = 0.7 * px
+    c.strokeStyle = 'rgba(122,62,60,0.5)'
+    c.stroke()
+  }
+  // moist highlight at the upper left
+  c.fillStyle = 'rgba(255,245,240,0.7)'
+  c.beginPath()
+  c.ellipse(-nw * 0.18, ny - nh * 0.28, 0.008, 0.004, -0.3, 0, Math.PI * 2)
   c.fill()
   // underline
   c.strokeStyle = '#7A4A46'
@@ -348,46 +395,72 @@ export function drawFace(c: CanvasRenderingContext2D, s: FaceState, px: number) 
   c.restore()
 }
 
-/** Whiskers: drawn last, over everything else of the cat. */
+/** Whiskers: drawn last, over everything else of the cat. Each is a tapered sliver (1.3 px at the root to
+ *  0.4 px at the tip); the tips trail head motion through a spring per side (s.wtip, head-local). */
 export function drawWhiskers(c: CanvasRenderingContext2D, s: FaceState, px: number) {
   const ny = NOSE.y - s.look * 0.05
   const my = ny + NOSE.h / 2 + 0.03
   c.save()
-  c.lineCap = 'round'
   const lens = [0.68, 0.7, 0.63, 0.56]
   const angs = [-0.2, -0.05, 0.1, 0.25]
-  const pass = (shadow: boolean) => {
-    c.strokeStyle = shadow ? 'rgba(60,42,30,0.22)' : 'rgba(255,253,246,0.88)'
-    c.lineWidth = (shadow ? 1.4 : 1.0) * px
+  const sliver = (x0: number, y0: number, qx: number, qy: number, ex: number, ey: number, w0: number, w1: number, a0: number, a1: number, shadow: boolean) => {
+    const N = 10
+    const L: [number, number][] = []
+    const R: [number, number][] = []
+    const n = shadow ? N / 2 : N
+    for (let i = 0; i <= n; i++) {
+      const t = i / N
+      const u = 1 - t
+      const x = u * u * x0 + 2 * u * t * qx + t * t * ex
+      const y = u * u * y0 + 2 * u * t * qy + t * t * ey
+      const dx = 2 * u * (qx - x0) + 2 * t * (ex - qx)
+      const dy = 2 * u * (qy - y0) + 2 * t * (ey - qy)
+      const l = Math.hypot(dx, dy) || 1
+      const w = ((w0 + (w1 - w0) * t) * px) / 2
+      L.push([x - (dy / l) * w, y + (dx / l) * w])
+      R.push([x + (dy / l) * w, y - (dx / l) * w])
+    }
+    const g = c.createLinearGradient(x0, y0, ex, ey)
+    if (shadow) {
+      g.addColorStop(0, 'rgba(60,42,30,0.24)')
+      g.addColorStop(0.5, 'rgba(60,42,30,0)')
+    } else {
+      g.addColorStop(0, `rgba(255,253,246,${a0})`)
+      g.addColorStop(1, `rgba(255,253,246,${a1})`)
+    }
+    c.fillStyle = g
     c.beginPath()
-    for (const sd of [-1, 1])
+    c.moveTo(L[0][0], L[0][1])
+    for (const p of L.slice(1)) c.lineTo(p[0], p[1])
+    for (let i = R.length - 1; i >= 0; i--) c.lineTo(R[i][0], R[i][1])
+    c.closePath()
+    c.fill()
+  }
+  for (const shadow of [true, false]) {
+    const ox = shadow ? 0.6 * px : 0
+    const oy = shadow ? 0.9 * px : 0
+    for (const sd of [-1, 1]) {
+      const tip = s.wtip[sd < 0 ? 0 : 1]
       for (let k = 0; k < 4; k++) {
         const x0 = sd * (0.11 + s.padPush * 0.02)
         const y0 = my - 0.012 + k * 0.014
         const a = angs[k] + s.whisk * sd
-        const L = lens[k]
-        const ox = shadow ? 0.6 * px : 0
-        const oy = shadow ? 0.9 * px : 0
-        const ex = x0 + sd * Math.cos(a) * L
-        const ey = y0 + Math.sin(a) * L + 0.06
-        c.moveTo(x0 + ox, y0 + oy)
-        c.quadraticCurveTo(x0 + sd * Math.cos(a) * L * 0.5 + ox, y0 + Math.sin(a) * L * 0.5 - 0.01 + oy, ex + ox, ey + oy)
+        const Lk = lens[k]
+        const lag = 0.85 + 0.1 * k
+        const ex = x0 + sd * Math.cos(a) * Lk + tip[0] * lag
+        const ey = y0 + Math.sin(a) * Lk + 0.06 + tip[1] * lag
+        sliver(x0 + ox, y0 + oy, x0 + sd * Math.cos(a) * Lk * 0.5 + ox + tip[0] * 0.25, y0 + Math.sin(a) * Lk * 0.5 - 0.01 + oy + tip[1] * 0.25, ex + ox, ey + oy, shadow ? 1.6 : 1.3, shadow ? 1 : 0.4, 0.9, 0.45, shadow)
       }
-    // brow whiskers
-    for (const sd of [-1, 1])
-      for (let k = 0; k < 3; k++) {
-        const x0 = sd * (0.14 + k * 0.035)
-        const y0 = EYE.y - EYE.h * 0.62 - s.look * 0.035
-        const a = -1.05 + k * 0.18
-        const L = 0.15 + k * 0.025
-        const ox = shadow ? 0.6 * px : 0
-        const oy = shadow ? 0.9 * px : 0
-        c.moveTo(x0 + ox, y0 + oy)
-        c.quadraticCurveTo(x0 + sd * Math.cos(a) * L * 0.5 + ox, y0 + Math.sin(a) * L * 0.5 + oy, x0 + sd * Math.cos(a) * L + sd * 0.03 + ox, y0 + Math.sin(a) * L + 0.03 + oy)
-      }
-    c.stroke()
+      // brow whiskers: finer and fainter, so they stop reading as chalk marks
+      if (!shadow)
+        for (let k = 0; k < 3; k++) {
+          const x0 = sd * (0.14 + k * 0.035)
+          const y0 = EYE.y - EYE.h * 0.62 - s.look * 0.035
+          const a = -1.05 + k * 0.18
+          const Lk = 0.15 + k * 0.025
+          sliver(x0, y0, x0 + sd * Math.cos(a) * Lk * 0.5, y0 + Math.sin(a) * Lk * 0.5, x0 + sd * Math.cos(a) * Lk + sd * 0.03 + tip[0] * 0.3, y0 + Math.sin(a) * Lk + 0.03 + tip[1] * 0.3, 0.7, 0.3, 0.6, 0.35, false)
+        }
+    }
   }
-  pass(true)
-  pass(false)
   c.restore()
 }

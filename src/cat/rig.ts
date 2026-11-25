@@ -8,7 +8,7 @@ import { COAT } from './palette'
 export const D2R = Math.PI / 180
 export type V2 = [number, number]
 
-export type PartId = 'tailA' | 'tailB' | 'tailC' | 'belly' | 'torso' | 'thigh' | 'footNear' | 'legFar' | 'chest' | 'legNear' | 'earL' | 'earR' | 'head'
+export type PartId = 'tailA' | 'tail' | 'belly' | 'torso' | 'thigh' | 'hindNear' | 'hindFar' | 'legFar' | 'chest' | 'legNear' | 'earL' | 'earR' | 'head' | 'palmTop' | 'palmSole' | 'toeTop' | 'toeSole'
 
 /** Pattern sample: white amount, stripe amount, tone multiplier (1 = plain coat). */
 export interface Pat {
@@ -46,6 +46,17 @@ export interface PartDef {
   tufts?: boolean
   /** extra pseudo-height bumps for shading (local) */
   bump?: (x: number, y: number) => number
+  /** baked straight in strip space and drawn as slices (limbs, tail), or a paw piece: not a rest-pose part */
+  strip?: boolean
+  paw?: boolean
+  /** light direction in local space (default: the scene light) */
+  light?: number[]
+  /** underlay inset from the silhouette (HW; default 0.022) */
+  inset?: number
+  /** 0..1 where the tip hairs catch a sheen (along the back) */
+  sheen?: (x: number, y: number) => number
+  /** colour of what lies behind the part at a cat-space point, when it is not the rug */
+  under?: (x: number, y: number) => [number, number, number] | null
 }
 
 export type Mat = [number, number, number, number, number, number]
@@ -194,6 +205,19 @@ export const EYE = { x: 0.23, y: 0.04, w: 0.24, h: 0.22 }
 export const NOSE = { y: 0.2, w: 0.09, h: 0.06 }
 export const EAR = { x: 0.33, y: -0.255, base: 0.34, h: 0.36, tilt: 22 * D2R, extraLeft: 4 * D2R }
 export const GROUND = 0.6
+
+/** Afternoon sun through a window at the upper left (cat space): 1 in the light patch, 0 in shade.
+ *  The patch runs along the light direction; two mullion bars cross it. */
+export const SUN_DIR: V2 = [0.35, 0.94]
+export function sunAt(x: number, y: number): number {
+  const across = x * 0.94 - y * 0.35
+  const along = x * 0.35 + y * 0.94
+  let k = smoothstep(0.57, 0.33, across) * smoothstep(-2.3, -2.0, across) * smoothstep(1.65, 1.2, along)
+  // window mullions: one bar along the beam, one across it
+  const bar = (d: number) => 1 - 0.85 * smoothstep(0.1, 0.035, Math.abs(d))
+  k *= bar(across + 1.45) * bar(along + 1.95)
+  return k
+}
 /** Cat-space extent of the rest pose including whisker reach (for layout). */
 export const EXTENT = { x0: -1.66, x1: 1.32, y0: -1.12, y1: 0.86 }
 
@@ -226,10 +250,7 @@ export const tailCurve = new Curve([
   [-0.12, 0.7],
   [-0.36, 0.6],
 ])
-const tailR = (u: number) => (0.098 - 0.026 * u) * (u > 0.955 ? Math.sqrt(Math.max(0, 1 - (u - 0.955) / 0.05)) * 0.88 + 0.12 : 1)
-export const TAIL_JOINT = 0.27
-/** the tail tip (tailC) swings about this point: twitch, thump, whip, curl */
-export const TAIL_TIP_JOINT = 0.76
+export const tailR = (u: number) => (0.098 - 0.026 * u) * (u > 0.955 ? Math.sqrt(Math.max(0, 1 - (u - 0.955) / 0.05)) * 0.88 + 0.12 : 1)
 
 /** Torso coordinates of a cat-space point: u along the spine (0 neck .. 1 rump), v across (0 spine .. 1 belly). */
 export function torsoUV(x: number, y: number) {
@@ -237,85 +258,82 @@ export function torsoUV(x: number, y: number) {
   return { u, v: s / thick(u) }
 }
 
-// near front leg: from the shoulder down and forward, wrist bent, paw curled up toward the chin, sole to the viewer
-const legNearC = new Curve([
-  [-0.3, 0.02],
-  [-0.48, 0.24],
-  [-0.62, 0.36],
-])
-// far front leg: tucked flat along the ground, paw from above (white mitten)
-const legFarC = new Curve([
-  [-0.2, 0.36],
-  [-0.32, 0.5],
-  [-0.42, 0.55],
-])
-/** paw centre and the direction its toes point */
-export const PAW_NEAR = { x: -0.74, y: 0.33, a: Math.atan2(-0.55, -1) }
-export const PAW_FAR = { x: -0.53, y: 0.57, a: Math.PI + 0.1 }
+/** hind leg: the haunch ellipse (rotates about HIND.H) */
 export const THIGH = { x: 0.78, y: 0.17, rx: 0.44, ry: 0.39, r: -18 * D2R }
-/** hind foot, folded forward under the haunch: heel (under the thigh) to toes */
-export const FOOT = { hx: 0.8, hy: 0.5, tx: 0.48, ty: 0.56 }
 
-function pawPath(c: Ctx, x: number, y: number, a: number, s = 1) {
-  ell(c, x, y, 0.135 * s, 0.112 * s, a)
-  // 4 toe bumps along the front edge
-  const ca = Math.cos(a)
-  const sa = Math.sin(a)
-  for (let k = 0; k < 4; k++) {
-    const off = (k - 1.5) * 0.056 * s
-    const fwd = (0.098 - 0.012 * Math.abs(k - 1.5)) * s
-    circ(c, x + ca * fwd - sa * off, y + sa * fwd + ca * off, 0.046 * s)
+/** Pink pad with a soft radial gradient. */
+function pinkPad(c: CanvasRenderingContext2D, px: number, py: number, rx: number, ry: number, rot: number) {
+  const g = c.createRadialGradient(px - 0.25 * rx, py - 0.3 * ry, 0, px, py, Math.max(rx, ry) * 1.05)
+  g.addColorStop(0, '#F4BDB7')
+  g.addColorStop(0.6, '#E7A3A0')
+  g.addColorStop(0.9, '#CF8B88')
+  g.addColorStop(1, 'rgba(207,139,136,0)')
+  c.fillStyle = g
+  c.beginPath()
+  c.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2)
+  c.fill()
+}
+
+// ---------- limb skeleton (spec 2.2), cat space, HW units ----------
+
+export interface FrontLeg {
+  S: V2
+  L1: number
+  L2: number
+  /** rest wrist */
+  W: V2
+  /** rest paw direction */
+  pawA: number
+  /** paw scale */
+  s: number
+}
+export const LEG_NEAR: FrontLeg = { S: [-0.3, 0.02], L1: 0.3, L2: 0.34, W: [-0.64, 0.3], pawA: 209 * D2R, s: 1.06 }
+export const LEG_FAR: FrontLeg = { S: [-0.2, 0.36], L1: 0.28, L2: 0.32, W: [-0.45, 0.55], pawA: 186 * D2R, s: 0.98 }
+/** hip, knee (haunch space), shank, foot, rest toe base, offset of the far hind leg */
+export const HIND = { H: [1.0, 0.0] as V2, K: [0.47, 0.36] as V2, L1: 0.36, L2: 0.33, toe: [0.46, 0.615] as V2, far: [0.07, 0.05] as V2, s: 1.0 }
+/** the dynamic tail strip starts here on the rest curve */
+export const TAIL_U0 = 0.27
+export const TAIL_LEN = tailCurve.len * (1 - TAIL_U0)
+
+/** Polygon outline of a straight strip from x = 0 to L, half-widths rT (-y side) and rB (+y side). */
+function stripPath(L: number, rT: (x: number) => number, rB: (x: number) => number, N = 40) {
+  return (c: Ctx) => {
+    c.moveTo(0, -rT(0))
+    for (let i = 1; i <= N; i++) {
+      const x = (L * i) / N
+      c.lineTo(x, -rT(x))
+    }
+    // rounded cap at the tip
+    const ry1 = (rT(L) + rB(L)) / 2
+    const cy1 = (rB(L) - rT(L)) / 2
+    for (let i = 1; i < 12; i++) {
+      const a = -Math.PI / 2 + (Math.PI * i) / 12
+      c.lineTo(L + Math.cos(a) * ry1 * 0.85, cy1 + Math.sin(a) * ry1)
+    }
+    for (let i = N; i >= 0; i--) {
+      const x = (L * i) / N
+      c.lineTo(x, rB(x))
+    }
+    const ry0 = (rT(0) + rB(0)) / 2
+    const cy0 = (rB(0) - rT(0)) / 2
+    for (let i = 1; i < 12; i++) {
+      const a = Math.PI / 2 + (Math.PI * i) / 12
+      c.lineTo(Math.cos(a) * ry0 * 0.85, cy0 + Math.sin(a) * ry0)
+    }
+    c.closePath()
   }
 }
 
-/** Pink pads on a paw whose sole faces the viewer: a lobed main pad and four toe beans. */
-function toeBeans(c: CanvasRenderingContext2D, x: number, y: number, a: number, s: number) {
-  const ca = Math.cos(a)
-  const sa = Math.sin(a)
-  const at = (f: number, o: number): V2 => [x + ca * f * s - sa * o * s, y + sa * f * s + ca * o * s]
-  const pad = (px: number, py: number, rx: number, ry: number, rot: number) => {
-    const g = c.createRadialGradient(px - 0.25 * rx, py - 0.3 * ry, 0, px, py, Math.max(rx, ry) * 1.05)
-    g.addColorStop(0, '#F4BDB7')
-    g.addColorStop(0.6, '#E7A3A0')
-    g.addColorStop(0.9, '#CF8B88')
-    g.addColorStop(1, 'rgba(207,139,136,0)')
-    c.fillStyle = g
-    c.beginPath()
-    c.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2)
-    c.fill()
-  }
-  c.save()
-  // soft shadow so the pads sit in the fur
-  c.fillStyle = 'rgba(150,110,100,0.18)'
-  c.beginPath()
-  const [mx, my] = at(-0.02, 0)
-  c.ellipse(mx, my + 0.004, 0.068 * s, 0.056 * s, a, 0, Math.PI * 2)
-  c.fill()
-  // main (metacarpal) pad: three lobes toward the toes
-  for (const o of [-0.026, 0, 0.026]) {
-    const [px, py] = at(-0.018 + (o === 0 ? 0.006 : 0), o)
-    pad(px, py, 0.034 * s, 0.03 * s, a)
-  }
-  const [cx, cy] = at(-0.036, 0)
-  pad(cx, cy, 0.05 * s, 0.032 * s, a + Math.PI / 2)
-  // toe beans in an arc
-  for (let k = 0; k < 4; k++) {
-    const o = (k - 1.5) * 0.034
-    const f = 0.062 - 0.012 * Math.abs(k - 1.5)
-    const [px, py] = at(f, o)
-    pad(px, py, 0.02 * s, 0.017 * s, a)
-  }
-  // highlights
-  c.fillStyle = 'rgba(255,240,236,0.55)'
-  for (let k = 0; k < 4; k++) {
-    const o = (k - 1.5) * 0.034
-    const f = 0.062 - 0.012 * Math.abs(k - 1.5)
-    const [px, py] = at(f + 0.004, o - 0.004)
-    c.beginPath()
-    c.ellipse(px, py, 0.006 * s, 0.004 * s, a, 0, Math.PI * 2)
-    c.fill()
-  }
-  c.restore()
+/** The scene light turned into a strip's local frame at its rest angle, directional term scaled by k. */
+function stripLight(restA: number, k: number) {
+  const lx = -0.45
+  const ly = -0.6
+  const ca = Math.cos(-restA)
+  const sa = Math.sin(-restA)
+  const x = (ca * lx - sa * ly) * k
+  const y = (sa * lx + ca * ly) * k
+  const z = Math.sqrt(Math.max(0.05, 1 - x * x - y * y))
+  return [x, y, z]
 }
 
 function headPath(c: Ctx) {
@@ -477,6 +495,18 @@ export function buildRig(o: RigOpts): PartDef[] {
     }
   }
 
+  // the torso's functions all ask for the nearest spine point of the same stroke root: remember the last one
+  let nx0 = NaN
+  let ny0 = NaN
+  let nr0: ReturnType<Curve['nearest']> = { u: 0, s: 0, t: [1, 0] }
+  const near = (x: number, y: number) => {
+    if (x !== nx0 || y !== ny0) {
+      nx0 = x
+      ny0 = y
+      nr0 = spine.nearest(x, y)
+    }
+    return nr0
+  }
   // ---- torso ----
   const torsoPath: PathFn = (c) => {
     sweep(c, spine, (u) => thick(u) / 2, (u) => thick(u) / 2 - 0.01, 60)
@@ -498,23 +528,28 @@ export function buildRig(o: RigOpts): PartDef[] {
       [1.08, 0.3, 0.26, 0.25],
     ],
     flow(x, y) {
-      const { u, s, t } = spine.nearest(x, y)
+      const { u, s, t } = near(x, y)
       const v = clamp01(s / thick(u))
       const a = Math.atan2(t[1], t[0]) + v * 0.95 + 0.1 * fbm(x * 2.5, y * 2.5)
       return a
     },
     len(x, y) {
-      const { u, s } = spine.nearest(x, y)
+      const { u, s } = near(x, y)
       const v = clamp01(s / thick(u))
       return 0.065 + 0.015 * smoothstep(0.45, 0.85, v)
     },
     jitter(x, y) {
-      const { u, s } = spine.nearest(x, y)
+      const { u, s } = near(x, y)
       const v = clamp01(s / thick(u))
       return (12 + 13 * smoothstep(0.5, 0.85, v)) * D2R
     },
+    sheen(x, y) {
+      const { u, s } = near(x, y)
+      const v = s / thick(u)
+      return smoothstep(0.1, 0.0, Math.abs(v - 0.22) - 0.0) * smoothstep(0.05, 0.2, u) * smoothstep(0.95, 0.8, u)
+    },
     pat(x, y) {
-      const { u, s } = spine.nearest(x, y)
+      const { u, s } = near(x, y)
       const v = s / thick(u)
       const nz = fbm(x * 3.2, y * 3.2)
       // mackerel bands across the back
@@ -551,56 +586,125 @@ export function buildRig(o: RigOpts): PartDef[] {
     pat: () => ({ w: 1, s: 0, tone: 1 }),
   }
 
-  // ---- front legs: short plump forearms, soft wrist, round paws ----
-  const legDef = (id: 'legNear' | 'legFar', cv: Curve, paw: { x: number; y: number; a: number }, s: number, beans: boolean): PartDef => ({
-    id,
-    bbox: id === 'legNear' ? [-1.0, -0.15, -0.12, 0.6] : [-0.75, 0.12, 0.08, 0.78],
-    path: (c) => {
-      sweep(c, cv, (u) => (0.14 - 0.055 * u) * s, () => 0, 24)
-      pawPath(c, paw.x, paw.y, paw.a, s)
-    },
-    toCat: ident,
-    R: 0.12,
-    fringe: 0.7,
-    ao: [[paw.x - Math.cos(paw.a) * 0.1, paw.y - Math.sin(paw.a) * 0.1, 0.09, 0.18]],
-    decorate(c) {
-      if (beans) {
-        toeBeans(c, paw.x, paw.y, paw.a, s)
-        return
-      }
-      // soft creases between the toes
-      const ca = Math.cos(paw.a)
-      const sa = Math.sin(paw.a)
-      c.save()
-      c.lineCap = 'round'
-      c.strokeStyle = 'rgba(120,105,90,0.4)'
-      c.lineWidth = 0.009
-      c.beginPath()
-      for (let i = 0; i < 3; i++) {
-        const off = (i - 1) * 0.056 * s
-        const x0 = paw.x + ca * 0.07 * s - sa * off
-        const y0 = paw.y + sa * 0.07 * s + ca * off
-        c.moveTo(x0, y0)
-        c.lineTo(x0 + ca * 0.065 * s, y0 + sa * 0.065 * s)
-      }
-      c.stroke()
-      c.restore()
-    },
-    noFur: beans ? (x, y) => Math.hypot(x - paw.x, y - paw.y) < 0.075 * s : undefined,
-    flow(x, y) {
-      const d = Math.hypot(x - paw.x, y - paw.y)
-      if (d < 0.17 * s) {
-        // fur on the paw: outward from the sole when it faces us, toward the toes otherwise
-        if (beans) return Math.atan2(y - paw.y, x - paw.x) + 0.15 * n1(x * 10, y * 10)
-        return paw.a + 0.15 * n1(x * 10, y * 10)
-      }
-      const { t } = cv.nearest(x, y)
-      return Math.atan2(t[1], t[0]) + 0.12 * n1(x * 8, y * 8)
-    },
-    len: (x, y) => (Math.hypot(x - paw.x, y - paw.y) < 0.17 ? 0.026 : 0.045),
-    jitter: () => 12 * D2R,
-    pat: () => ({ w: 1, s: 0, tone: 1 }),
-  })
+  // ---- front legs: strips from the shoulder (x = 0) to the wrist (x = L1 + L2) ----
+  // the elbow points back: the outer side of the bend is -y, where the elbow bulges
+  const frontDef = (id: 'legNear' | 'legFar', g: FrontLeg, k: number): PartDef => {
+    const L = g.L1 + g.L2
+    const e = g.L1
+    const rT = (x: number) => k * lerpPiece(x, [[0, 0.125], [e * 0.6, 0.112], [e, 0.116], [e + 0.07, 0.096], [e + 0.17, 0.08], [L - 0.06, 0.07], [L, 0.074]])
+    const rB = (x: number) => k * lerpPiece(x, [[0, 0.125], [e * 0.6, 0.1], [e, 0.094], [e + 0.1, 0.083], [e + 0.2, 0.074], [L - 0.06, 0.066], [L, 0.072]])
+    const restA = Math.atan2(g.W[1] - g.S[1], g.W[0] - g.S[0])
+    return {
+      id,
+      strip: true,
+      bbox: [-0.16, -0.19, L + 0.13, 0.19],
+      path: stripPath(L, rT, rB),
+      toCat: mul(tr(g.S[0], g.S[1]), rot(restA)),
+      light: stripLight(id === 'legNear' ? 183 * D2R : 194 * D2R, 0.4),
+      R: 0.1,
+      fringe: 0.75,
+      density: 0.8,
+      flow(x, y) {
+        // along the limb, fanning slightly at the wrist
+        const r = (rT(x) + rB(x)) / 2
+        return (y / r) * 0.28 * smoothstep(L - 0.2, L, x) + 0.12 * n1(x * 8 + (id === 'legNear' ? 0 : 5), y * 8)
+      },
+      len: (x) => 0.038 + 0.01 * smoothstep(e + 0.1, 0.1, x),
+      jitter: () => 11 * D2R,
+      pat: (x) => ({ w: 1, s: 0, tone: 1 - 0.03 * smoothstep(e, 0, x) }),
+      decorate(c) {
+        // the root melts into the body it is drawn over
+        c.save()
+        c.globalCompositeOperation = 'destination-in'
+        const gr = id === 'legNear' ? c.createLinearGradient(0.02, 0, 0.24, 0) : c.createLinearGradient(0.0, 0, 0.14, 0)
+        gr.addColorStop(0, 'rgba(0,0,0,0)')
+        gr.addColorStop(1, 'rgba(0,0,0,1)')
+        c.fillStyle = gr
+        c.fillRect(-0.2, -0.3, L + 0.4, 0.6)
+        c.restore()
+      },
+    }
+  }
+
+  // ---- paws (spec 2.3): palm and toes, top (furred back) and sole views, in paw space ----
+  const palmPath = (c: Ctx) => {
+    ell(c, 0.098, 0, 0.104, 0.094)
+    ell(c, 0.02, 0, 0.07, 0.074)
+  }
+  const PADC: V2 = [0.112, 0]
+  const pawPiece = (id: 'palmTop' | 'palmSole' | 'toeTop' | 'toeSole'): PartDef => {
+    const toe = id === 'toeTop' || id === 'toeSole'
+    const sole = id === 'palmSole' || id === 'toeSole'
+    const inBean = (x: number, y: number) => Math.hypot((x - 0.05) / 0.026, y / 0.022) < 1
+    const inPad = (x: number, y: number) => Math.hypot((x - PADC[0]) / 0.062, y / 0.06) < 1
+    return {
+      id,
+      paw: true,
+      bbox: toe ? [-0.05, -0.075, 0.15, 0.075] : [-0.11, -0.16, 0.27, 0.16],
+      path: toe ? (c) => ell(c, 0.046, 0, 0.05, 0.034) : palmPath,
+      toCat: tr(-0.8, 0.3),
+      light: [0, 0, 1],
+      // toes are small: a narrow soft edge keeps a solid core (a wide one made them see-through wisps)
+      R: toe ? 0.012 : 0.08,
+      inset: toe ? 0.008 : 0.016,
+      fringe: toe ? 0.45 : 0.65,
+      density: toe ? 1.2 : 1.0,
+      noFur: sole ? (toe ? inBean : inPad) : undefined,
+      flow(x, y) {
+        const nz = 0.15 * n1(x * 12 + (toe ? 3 : 0), y * 12)
+        if (!sole) return (toe ? 0 : Math.atan2(y * 0.6, 1)) + nz
+        // on the sole the fur grows outward from the pads
+        return toe ? Math.atan2(y, x - 0.05) + nz : Math.atan2(y, x - PADC[0]) + nz
+      },
+      len: () => (toe ? 0.016 : 0.028),
+      jitter: () => 12 * D2R,
+      pat: () => ({ w: 1, s: 0, tone: sole ? 0.98 : 1 }),
+      ao: toe ? undefined : [[0.19, 0, 0.06, 0.12]],
+      decorate(c) {
+        if (!sole) {
+          if (toe) {
+            // a faint crease line down each side reads as the gap between toes
+            c.save()
+            c.strokeStyle = 'rgba(130,112,96,0.28)'
+            c.lineWidth = 0.006
+            c.lineCap = 'round'
+            c.beginPath()
+            c.moveTo(0.01, -0.026)
+            c.quadraticCurveTo(0.04, -0.031, 0.07, -0.024)
+            c.moveTo(0.01, 0.026)
+            c.quadraticCurveTo(0.04, 0.031, 0.07, 0.024)
+            c.stroke()
+            c.restore()
+          }
+          return
+        }
+        c.save()
+        c.fillStyle = 'rgba(150,110,100,0.18)'
+        if (toe) {
+          c.beginPath()
+          c.ellipse(0.05, 0.003, 0.03, 0.025, 0, 0, Math.PI * 2)
+          c.fill()
+          pinkPad(c, 0.05, 0, 0.024, 0.02, 0)
+          c.fillStyle = 'rgba(255,240,236,0.55)'
+          c.beginPath()
+          c.ellipse(0.056, -0.006, 0.007, 0.005, 0, 0, Math.PI * 2)
+          c.fill()
+        } else {
+          c.beginPath()
+          c.ellipse(PADC[0], 0.004, 0.07, 0.066, 0, 0, Math.PI * 2)
+          c.fill()
+          // main pad: three lobes toward the toes, a wider heel
+          for (const o of [-0.028, 0, 0.028]) pinkPad(c, PADC[0] + 0.022 - Math.abs(o) * 0.25, o, 0.034, 0.03, 0)
+          pinkPad(c, PADC[0] - 0.012, 0, 0.034, 0.052, 0)
+          c.fillStyle = 'rgba(255,240,236,0.4)'
+          c.beginPath()
+          c.ellipse(PADC[0] + 0.02, -0.02, 0.012, 0.007, 0.3, 0, Math.PI * 2)
+          c.fill()
+        }
+        c.restore()
+      },
+    }
+  }
 
   // ---- hind leg: a big round haunch with the foot folded forward under it ----
   const thigh: PartDef = {
@@ -631,68 +735,49 @@ export function buildRig(o: RigOpts): PartDef[] {
       return { w, s: st * (1 - w), tone: 1 }
     },
   }
-  // heel (under the haunch) -> ankle, then a round paw bulb with toe bumps pointing forward
-  const footCv = new Curve([
-    [FOOT.hx, FOOT.hy],
-    [(FOOT.hx + FOOT.tx) / 2 + 0.04, (FOOT.hy + FOOT.ty) / 2 + 0.01],
-    [FOOT.tx + 0.06, FOOT.ty],
-  ])
-  const footA = Math.atan2(FOOT.ty - FOOT.hy, FOOT.tx - FOOT.hx)
-  const PX = FOOT.tx
-  const PY = FOOT.ty + 0.005
-  const toes: V2[] = [
-    [PX - 0.1, PY - 0.05],
-    [PX - 0.115, PY + 0.005],
-    [PX - 0.095, PY + 0.06],
-  ]
-  const footNear: PartDef = {
-    id: 'footNear',
-    bbox: [FOOT.tx - 0.26, FOOT.hy - 0.2, FOOT.hx + 0.2, FOOT.ty + 0.2],
-    path: (c) => {
-      sweep(c, footCv, (u) => 0.1 - 0.02 * u, () => 0, 20)
-      ell(c, PX, PY, 0.12, 0.105, -0.1)
-      for (const [x, y] of toes) circ(c, x, y, 0.052)
-    },
-    toCat: ident,
-    R: 0.1,
-    fringe: 0.7,
-    ao: [[PX + 0.13, PY - 0.02, 0.07, 0.22]],
-    decorate(c) {
-      // creases between the toes
-      c.save()
-      c.lineCap = 'round'
-      c.strokeStyle = 'rgba(120,105,90,0.45)'
-      c.lineWidth = 0.009
-      c.beginPath()
-      for (let k = 0; k < 2; k++) {
-        const [ax, ay] = toes[k]
-        const [bx, by] = toes[k + 1]
-        const mx = (ax + bx) / 2
-        const my = (ay + by) / 2
-        c.moveTo(mx - 0.035, my)
-        c.lineTo(mx + 0.035, my + 0.003)
-      }
-      c.stroke()
-      c.restore()
-    },
-    flow: (x, y) => {
-      if (Math.hypot(x - PX, y - PY) < 0.15) return Math.PI + 0.1 * Math.sign(y - PY) + 0.15 * n1(x * 10, y * 10)
-      return footA + 0.12 * n1(x * 10, y * 10)
-    },
-    len: (x) => (x < PX + 0.1 ? 0.03 : 0.045),
-    jitter: () => 12 * D2R,
-    pat(x, y) {
-      // a white sock on the paw; the shaft toward the heel is tabby
-      const nz = n2(x * 8, y * 8)
-      const w = smoothstep(PX + 0.2, PX + 0.12, x + 0.03 * nz)
-      return { w, s: 0, tone: 0.92 }
-    },
+  // ---- hind legs: shank (knee -> hock) and foot (hock -> toe base) as one strip ----
+  const hindDef = (id: 'hindNear' | 'hindFar', tone: number): PartDef => {
+    const L1 = HIND.L1
+    const L = HIND.L1 + HIND.L2
+    const rT = (x: number) => lerpPiece(x, [[0, 0.1], [0.12, 0.08], [L1 - 0.06, 0.07], [L1, 0.088], [L1 + 0.08, 0.078], [L, 0.076]])
+    const rB = (x: number) => lerpPiece(x, [[0, 0.1], [0.12, 0.078], [L1 - 0.06, 0.068], [L1, 0.075], [L1 + 0.1, 0.072], [L, 0.074]])
+    return {
+      id,
+      strip: true,
+      bbox: [-0.15, -0.16, L + 0.12, 0.16],
+      path: stripPath(L, rT, rB),
+      toCat: mul(tr(0.8, 0.5), rot(Math.PI)),
+      light: stripLight(190 * D2R, 0.4),
+      R: 0.08,
+      fringe: 0.75,
+      density: 0.7,
+      flow: (x, y) => 0.12 * n1(x * 9 + 2, y * 9),
+      len: () => 0.04,
+      jitter: () => 12 * D2R,
+      pat(x, y) {
+        // a white sock toward the toes; tabby with faint bars up the shank
+        const nz = n2(x * 8, y * 8)
+        const w = smoothstep(L1 - 0.04, L1 + 0.06, x + 0.03 * nz)
+        const ph = x * 9 + nz * 0.2
+        const fr = ph - Math.floor(ph)
+        const st = 0.6 * smoothstep(0.2, 0.1, Math.abs(fr - 0.5)) * smoothstep(L1 + 0.05, L1 - 0.05, x)
+        return { w, s: st * (1 - w), tone: tone * 0.94 }
+      },
+    }
   }
-  // ---- tail ----
-  const tailDef = (id: 'tailA' | 'tailB' | 'tailC', u0: number, u1: number): PartDef => ({
-    id,
-    bbox: id === 'tailA' ? [0.72, -0.15, 1.38, 0.78] : id === 'tailB' ? [-0.1, 0.38, 1.32, 0.92] : [-0.62, 0.3, 0.3, 0.92],
-    path: (c) => sweep(c, tailCurve, tailR, () => 0, id === 'tailA' ? 20 : 50, u0, u1),
+  // ---- tail: tailA rigid behind the rump; the rest is one strip along a dynamic curve ----
+  const tailPat = (u: number, x: number, y: number) => {
+    const nz = n2(x * 6, y * 6)
+    const ph = u * 9 + nz * 0.15
+    const fr = ph - Math.floor(ph)
+    const st = smoothstep(0.2, 0.12, Math.abs(fr - 0.5)) * smoothstep(0.05, 0.12, u)
+    const tip = smoothstep(0.9, 0.96, u)
+    return { w: 0, s: Math.max(st, tip * 0.9), tone: 0.97 }
+  }
+  const tailA: PartDef = {
+    id: 'tailA',
+    bbox: [0.72, -0.15, 1.38, 0.78],
+    path: (c) => sweep(c, tailCurve, tailR, () => 0, 20, 0, TAIL_U0 + 0.03),
     toCat: ident,
     R: 0.09,
     flow(x, y) {
@@ -701,28 +786,34 @@ export function buildRig(o: RigOpts): PartDef[] {
     },
     len: () => 0.068,
     jitter: () => 12 * D2R,
-    noFur: (x, y) => {
-      const { u } = tailCurve.nearest(x, y)
-      return u < u0 - 0.02 || u > u1 + 0.03
-    },
+    noFur: (x, y) => tailCurve.nearest(x, y).u > TAIL_U0 + 0.06,
     pat(x, y) {
-      const { u } = tailCurve.nearest(x, y)
-      const nz = n2(x * 6, y * 6)
-      const ph = u * 9 + nz * 0.15
-      const fr = ph - Math.floor(ph)
-      const st = smoothstep(0.2, 0.12, Math.abs(fr - 0.5)) * smoothstep(0.05, 0.12, u)
-      // dark tip
-      const tip = smoothstep(0.9, 0.96, u)
-      return { w: 0, s: Math.max(st, tip * 0.9), tone: 0.97 }
+      return tailPat(tailCurve.nearest(x, y).u, x, y)
     },
-  })
+  }
+  const TL = TAIL_LEN
+  const uOf = (x: number) => TAIL_U0 + (x / TL) * (1 - TAIL_U0)
+  const tailStrip: PartDef = {
+    id: 'tail',
+    strip: true,
+    bbox: [-0.14, -0.15, TL + 0.1, 0.15],
+    path: stripPath(TL, (x) => tailR(uOf(Math.min(TL, x))), (x) => tailR(uOf(Math.min(TL, x))), 80),
+    toCat: mul(tr(1.1, 0.64), rot(Math.PI)),
+    light: [0, -0.18, 0.98],
+    R: 0.09,
+    density: 0.8,
+    flow: (x, y) => 0.1 * n1(x * 8, y * 8),
+    len: () => 0.068,
+    jitter: () => 12 * D2R,
+    pat: (x, y) => tailPat(uOf(x), x, y),
+  }
 
   // ---- belly: the soft white tummy shown when the cat rolls over (drawn with alpha = roll) ----
-  const BC: V2 = [0.12, 0.3]
+  const BC: V2 = [0.14, 0.3]
   const belly: PartDef = {
     id: 'belly',
     bbox: [-0.62, -0.12, 0.86, 0.72],
-    path: (c) => ell(c, BC[0], BC[1], 0.62, 0.3, -0.06),
+    path: (c) => ell(c, BC[0], BC[1], 0.56, 0.26, -0.06),
     toCat: ident,
     R: 0.3,
     density: 0.9,
@@ -733,18 +824,32 @@ export function buildRig(o: RigOpts): PartDef[] {
     pat: (x) => ({ w: 1, s: 0, tone: 1.02 - 0.04 * smoothstep(0.3, 0.7, Math.abs(x - BC[0])) }),
   }
 
-  // draw order (back to front)
+  // what lies behind the haunch's and the head's lower edges, when it is white fur (the belly / chest of a
+  // bicolour coat); null otherwise, so solid coats keep their normal fringe
+  const behind = (x: number, y: number): [number, number, number] | null => {
+    const { u, s: sd } = near(x, y)
+    const v = sd / thick(u)
+    if (v < -0.05 || v > 1.02) return null
+    return torso.pat(x, y).w > 0.5 ? [240, 236, 228] : null
+  }
+  thigh.under = behind
+  head.under = behind
+  // bake order (drawing order is set in Cat.draw)
   return [
-    tailDef('tailA', 0, TAIL_JOINT + 0.03),
+    tailA,
     torso,
     belly,
     thigh,
-    footNear,
-    tailDef('tailB', TAIL_JOINT - 0.02, TAIL_TIP_JOINT + 0.02),
-    tailDef('tailC', TAIL_TIP_JOINT - 0.02, 1),
-    legDef('legFar', legFarC, PAW_FAR, 0.94, false),
+    hindDef('hindNear', 1),
+    hindDef('hindFar', 0.92),
+    tailStrip,
+    frontDef('legFar', LEG_FAR, 0.96),
     chest,
-    legDef('legNear', legNearC, PAW_NEAR, 1.12, true),
+    frontDef('legNear', LEG_NEAR, 1.04),
+    pawPiece('palmTop'),
+    pawPiece('palmSole'),
+    pawPiece('toeTop'),
+    pawPiece('toeSole'),
     earDef('earL', -1),
     earDef('earR', 1),
     head,
@@ -754,6 +859,7 @@ export function buildRig(o: RigOpts): PartDef[] {
 /** Union silhouette of the whole rest-pose cat in cat space (for the contact shadow). */
 export function catSilhouette(defs: PartDef[], c: CanvasRenderingContext2D) {
   for (const d of defs) {
+    if (d.strip || d.paw) continue
     c.save()
     const m = d.toCat
     c.transform(m[0], m[1], m[2], m[3], m[4], m[5])
