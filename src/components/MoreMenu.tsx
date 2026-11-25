@@ -12,6 +12,7 @@ const SITES: { id: ToyId; icon: string }[] = [
   { id: 'purr', icon: '🐈' },
   { id: 'squish', icon: '🍡' },
   { id: 'scratch', icon: '🎟️' },
+  { id: 'peel', icon: '📱' },
 ]
 
 /** Light toys (pale backgrounds) get dark-ink pills. */
