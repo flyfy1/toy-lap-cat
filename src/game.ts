@@ -9,6 +9,7 @@ import { COAT } from './cat/palette'
 import { HEAD_C, HEAD_ROT, apply, mul, rot, spine, tr } from './cat/rig'
 import type { Key } from './i18n'
 import type { Hand } from './hand'
+import { act } from './analytics'
 
 /** Counters for the cat-tax receipt (this session). */
 export interface CatStats {
@@ -278,6 +279,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
     if (ptrs.size >= 2 && !ptrs.has(e.pointerId)) return
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, vx: 0, vy: 0, t: e.timeStamp, type: e.pointerType, down: true })
     if (e.pointerType !== 'touch') loadHand()
+    if (cat.hit(e.clientX, e.clientY)) act('stroke')
     markFirst(e)
   }
   const onMove = (e: PointerEvent) => {
@@ -383,6 +385,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         say('cat_rough', 2)
         break
       case 'belly_no':
+        act('belly')
         say('cat_belly_no', 2)
         break
       case 'belly_invite':
@@ -393,6 +396,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         vibe([30, 40, 30, 40, 30, 40, 30])
         purr?.set(0)
         say('cat_trap', 3)
+        act('trap')
         hooks.onTrack('belly_trap', { n: stats.traps })
         break
       case 'kick':
@@ -421,6 +425,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         audio.swat()
         vibe(12)
         say('cat_warned', 3)
+        act('swat')
         hooks.onTrack('swat', { n: stats.swats })
         break
       case 'thump':
@@ -428,6 +433,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         break
       case 'knead_start':
         say('cat_knead', 2)
+        act('knead')
         hooks.onTrack('knead_start')
         break
       case 'biscuit':
@@ -465,6 +471,9 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         hooks.onTrack('glass_knocked', { n: ++glassN })
         break
       case 'zone':
+        // new touch on a spot: RANK index 8 is the chin, 13 the offered belly
+        if (n === 8) act('chin')
+        else if (n === 13) act('belly')
         break
       case 'groom':
         break
