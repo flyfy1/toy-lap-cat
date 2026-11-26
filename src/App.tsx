@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { applyMeta, t, type Key } from './i18n'
 import { startAnalytics, track } from './analytics'
-import { COATS, type Coat, catFromUrl, landing, parseName, stats as shareStats, syncCatToUrl, trackLanding } from './share'
+import { COATS, type Coat, arrive, catFromUrl, landing, offer, parseName, stats as shareStats, syncCatToUrl, trackLanding } from './share'
 import { Hint } from './components/Hint'
 import { MoreMenu, pillClass } from './components/MoreMenu'
 import { IconPaw, IconReceipt, IconSpeaker } from './components/CatIcons'
@@ -54,7 +54,6 @@ export default function App() {
   const [touched, setTouched] = useState(false)
   const [line, setLine] = useState<{ key: Key; id: number } | null>(null)
   const [lineY, setLineY] = useState(0)
-  const [chip, setChip] = useState(0)
   const [panel, setPanel] = useState(false)
   const [muted, setMuted] = useState(() => {
     try {
@@ -72,6 +71,12 @@ export default function App() {
     if (OG) return
     startAnalytics('purr')
     trackLanding()
+    // a portal visit: silk's cat has just jumped (its stretch), squish's paw (the next paw touch is held),
+    // yoink's orange tabby (this visit only: not in the address bar), scratch's prize (the tag only)
+    arrive('purr', ['top-[4.2rem]', 'bg-[#FFFCF5] text-[#3B2E24]']).then((a) => {
+      if (a?.from === 'yoink' && !new URLSearchParams(location.search).has('c')) setCoat('orange')
+      else if (a) api.current?.arrive(a.from === 'squish' ? 'paw' : a.from === 'silk' ? 'stretch' : '')
+    })
     let sent = false
     const onHide = () => {
       if (sent || !statsRef.current) return
@@ -97,7 +102,6 @@ export default function App() {
     applyCoat(coat)
     shareStats.coat = coat
     let lineId = 0
-    let chipTimer = 0
     const g = startGame(
       ref.current!,
       {
@@ -110,9 +114,8 @@ export default function App() {
           setLineY(g.lineY())
         },
         onGlass() {
-          setChip((c) => c + 1)
-          window.clearTimeout(chipTimer)
-          chipTimer = window.setTimeout(() => setChip(0), 4000)
+          // the glass the cat pushed off: a portal to smash, after its 3 s line
+          offer('purr', 'glass', () => g.glassAt(), 3000)
         },
         onAsleep(a) {
           document.title = a ? t('title_asleep', { name: nameRef.current || t('name_purr') }) : baseTitle.current
@@ -131,7 +134,6 @@ export default function App() {
     const onResize = () => setLineY(g.lineY())
     window.addEventListener('resize', onResize)
     return () => {
-      window.clearTimeout(chipTimer)
       window.removeEventListener('resize', onResize)
       g.dispose()
     }
@@ -179,22 +181,13 @@ export default function App() {
       <canvas ref={ref} />
       <Line k={line} y={lineY} />
       <Hint text={t(MOUSE ? 'hint_purr_m' : 'hint_purr')} hidden={touched || !!line} light />
-      {chip > 0 && (
-        <a
-          href="https://smash.integ.life"
-          onPointerDown={(e) => e.stopPropagation()}
-          className="mono-in fixed left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-[#4A3A2C]/20 bg-[#FFF8EE]/80 px-4 py-1.5 text-sm font-medium text-[#4A3A2C] backdrop-blur-md"
-        >
-          {t('cat_smash_chip')}
-        </a>
-      )}
       <div className="fixed left-3 top-3 z-20 select-none" onPointerDown={(e) => e.stopPropagation()}>
         <button type="button" aria-label={t('cat_coat')} onClick={() => setPanel((p) => !p)} className={`${pillClass('purr')} ${name ? '' : '!w-11 justify-center !px-0'}`}>
           <IconPaw />
           {name ? <span>{parseName(name)}</span> : null}
         </button>
         {panel && (
-          <div className="mt-2 w-64 rounded-2xl border border-[#4A3A2C]/15 bg-[#FFF8EE]/90 p-3 text-[#4A3A2C] shadow-lg backdrop-blur-md">
+          <div data-busy="" className="mt-2 w-64 rounded-2xl border border-[#4A3A2C]/15 bg-[#FFF8EE]/90 p-3 text-[#4A3A2C] shadow-lg backdrop-blur-md">
             <input
               value={name}
               maxLength={12}

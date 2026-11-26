@@ -28,7 +28,7 @@ export interface GameHooks {
   onFirst(): void
   /** a monologue line (already rate-limited) */
   onLine(key: Key): void
-  /** a glass went off the table: show the smash chip */
+  /** a glass went off the table (a portal to smash) */
   onGlass(): void
   onAsleep(asleep: boolean): void
   /** analytics-worthy moments (numbers only) */
@@ -44,6 +44,10 @@ export interface GameApi {
   snapshot(): HTMLCanvasElement
   /** css px y of the line under the cat (for the monologue) */
   lineY(): number
+  /** css px of the spot the glass went over, while it is gone */
+  glassAt(): readonly [number, number] | null
+  /** a portal visit: the cat has just landed (its stretch), or the next paw touch is held */
+  arrive(how: 'stretch' | 'paw' | ''): void
 }
 
 const LINE_GAP = 2500
@@ -336,6 +340,7 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   const vibe = (p: number | number[]) => {
     if (!audio.muted && freezeAt === null) haptic(p)
   }
+  let pawOnce = false
   let lineAt = -1e9
   let lineKey: Key | null = null
   let pending: { key: Key; prio: number } | null = null
@@ -370,6 +375,8 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
         break
       case 'beans':
       case 'beans_hold':
+        // a portal visit from squish's paw: only the first paw touch is held
+        if (e === 'beans_hold' && pawOnce) cat.pawHoldForce = pawOnce = false
         say('cat_beans', 2)
         break
       case 'tail':
@@ -709,6 +716,16 @@ export function startGame(canvas: HTMLCanvasElement, hooks: GameHooks, keep?: Ca
   return {
     stats,
     rating,
+    glassAt() {
+      const g = cat.glass
+      if (g.state !== 'gone') return null
+      const p = catPt(g.x, g.y)
+      return [p.x, p.y] as const
+    },
+    arrive(how) {
+      if (how === 'paw') cat.pawHoldForce = pawOnce = true
+      else if (how === 'stretch' && !matchMedia('(prefers-reduced-motion: reduce)').matches) cat.wakeT = 0.4
+    },
     lineY() {
       const r = cat.rugRect(w, h)
       return Math.min(h - 72, r.y1 + 0.1 * cat.HW + 14)
